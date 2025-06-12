@@ -111,16 +111,23 @@ class CrawlerPDFWeb:
             exact_match = client_lower in pdf_lower
             clean_match = client_spaces in pdf_spaces
             
-            # Busca por palavras
+            # Busca por palavras (mais rigorosa)
             word_matches = []
-            for word in client_words:
-                if len(word) >= 2 and word in pdf_words:
-                    word_matches.append(word)
+            significant_words = []  # Palavras significativas (excluindo palavras comuns)
+            common_words = {'ltda', 'sa', 'cia', 'inc', 'corp', 'limited', 'tech', 'group', 'international', 'brasil', 'brazil', 
+                           'company', 'solutions', 'services', 'industria', 'comercio', 'distribuidora', 'center', 'centre',
+                           'industrias', 'laboratorio', 'farmacia', 'saude', 'health', 'medical', 'global', 'nacional'}
             
-            # Busca flexível
+            for word in client_words:
+                if len(word) >= 3 and word not in common_words:  # Só palavras ≥3 chars e não comuns
+                    significant_words.append(word)
+                    if word in pdf_words:
+                        word_matches.append(word)
+            
+            # Busca flexível (mais restritiva)
             flexible_matches = []
             for word in client_words:
-                if len(word) >= 3:
+                if len(word) >= 4:  # Só palavras maiores para busca flexível
                     variations = [
                         word,
                         word.replace('.', ''),
@@ -129,7 +136,7 @@ class CrawlerPDFWeb:
                     ]
                     
                     for variation in variations:
-                        if variation and variation in pdf_lower:
+                        if variation and len(variation) >= 3 and variation in pdf_lower:
                             flexible_matches.append(f"{word}→{variation}")
                             break
             
@@ -140,7 +147,7 @@ class CrawlerPDFWeb:
             
             best_similarity = max(similarity_partial, similarity_token, similarity_set)
             
-            # Determinar correspondência
+            # Determinar correspondência (critérios mais rigorosos)
             found = False
             match_type = "N/A"
             
@@ -150,13 +157,16 @@ class CrawlerPDFWeb:
             elif clean_match:
                 found = True
                 match_type = "Sem pontuação"
-            elif len(word_matches) > 0 and len(word_matches) / len(client_words) >= 0.5:
+            elif len(significant_words) > 0 and len(word_matches) >= 2 and len(word_matches) / len(significant_words) >= 0.7:
+                # Precisa de pelo menos 2 palavras significativas E 70% de match
                 found = True
-                match_type = f"Palavras ({len(word_matches)}/{len(client_words)})"
-            elif len(flexible_matches) > 0:
+                match_type = f"Palavras ({len(word_matches)}/{len(significant_words)})"
+            elif len(client_words) >= 3 and len(flexible_matches) >= 2:
+                # Para busca flexível, precisa de pelo menos 2 matches
                 found = True
                 match_type = "Flexível"
-            elif best_similarity >= self.threshold:
+            elif best_similarity >= self.threshold and best_similarity >= 85:
+                # Fuzzy só aceita com alta similaridade (≥85%) para evitar falsos positivos
                 found = True
                 match_type = f"Fuzzy ({best_similarity}%)"
             
