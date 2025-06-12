@@ -27,6 +27,7 @@ class CrawlerPDFWeb:
         self.status_message = "Pronto para processar"
         self.last_output_file = None
         self.last_output_filename = None
+        self.cancelled = False
         
     def read_excel_clients(self, excel_path):
         """Lê clientes do arquivo Excel."""
@@ -96,6 +97,11 @@ class CrawlerPDFWeb:
         print(f"🔍 Processando {total} clientes contra PDF com {len(pdf_words)} palavras únicas")
         
         for i, client in enumerate(client_list):
+            # Verificar se foi cancelado
+            if self.cancelled:
+                print("⚠️ Processamento cancelado pelo usuário")
+                break
+                
             if not client:
                 continue
                 
@@ -191,10 +197,25 @@ class CrawlerPDFWeb:
         
         return results
     
+    def cancel_processing(self):
+        """Cancela o processamento atual."""
+        print("🛑 Cancelamento solicitado")
+        self.cancelled = True
+        self.status_message = "❌ Processamento cancelado pelo usuário"
+        
+    def reset_processing(self):
+        """Reseta o estado para novo processamento."""
+        self.cancelled = False
+        self.processing = False
+        self.progress = 0
+        self.results = []
+        self.status_message = "Pronto para processar"
+    
     def process_files(self, excel_path, pdf_path, threshold):
         """Processa os arquivos."""
         print(f"🚀 Iniciando processamento com threshold={threshold}")
         self.processing = True
+        self.cancelled = False  # Reset cancelamento
         self.progress = 0
         self.threshold = threshold
         
@@ -220,6 +241,11 @@ class CrawlerPDFWeb:
             # Buscar correspondências
             self.status_message = "🔍 Buscando correspondências..."
             results = self.find_matches(clients, pdf_text)
+            
+            # Verificar se foi cancelado durante o processamento
+            if self.cancelled:
+                self.processing = False
+                return None
             
             # Salvar resultados
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -287,7 +313,10 @@ HTML_TEMPLATE = """
         .btn { padding: 15px 30px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; transition: all 0.3s; }
         .btn-primary { background: #667eea; color: white; }
         .btn-primary:hover { background: #5a6fd8; transform: translateY(-2px); }
+        .btn-cancel { background: #dc3545; color: white; margin-left: 10px; }
+        .btn-cancel:hover { background: #c82333; transform: translateY(-2px); }
         .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        .button-group { display: flex; align-items: center; }
         .progress-section { display: none; }
         .progress-bar { width: 100%; height: 20px; background: #f0f0f0; border-radius: 10px; overflow: hidden; margin: 15px 0; }
         .progress-fill { height: 100%; background: linear-gradient(90deg, #667eea, #764ba2); transition: width 0.3s; }
@@ -326,9 +355,14 @@ HTML_TEMPLATE = """
                     </div>
                 </div>
 
-                <button type="submit" id="processBtn" class="btn btn-primary">
-                    🚀 Processar Arquivos
-                </button>
+                <div class="button-group">
+                    <button type="submit" id="processBtn" class="btn btn-primary">
+                        🚀 Processar Arquivos
+                    </button>
+                    <button type="button" id="cancelBtn" class="btn btn-cancel" style="display: none;">
+                        ⏹️ Cancelar
+                    </button>
+                </div>
             </form>
         </div>
 
@@ -352,6 +386,7 @@ HTML_TEMPLATE = """
     <script>
         const form = document.getElementById('crawlerForm');
         const processBtn = document.getElementById('processBtn');
+        const cancelBtn = document.getElementById('cancelBtn');
         const progressSection = document.getElementById('progressSection');
         const resultsSection = document.getElementById('resultsSection');
         const progressFill = document.getElementById('progressFill');
@@ -365,6 +400,24 @@ HTML_TEMPLATE = """
             toleranceValue.textContent = this.value + '%';
         });
         
+        cancelBtn.addEventListener('click', async function() {
+            try {
+                const response = await fetch('/cancel', {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    progressSection.style.display = 'none';
+                    resetUI();
+                    alert('Processamento cancelado com sucesso!');
+                } else {
+                    throw new Error('Erro ao cancelar');
+                }
+            } catch (error) {
+                alert('Erro ao cancelar: ' + error.message);
+            }
+        });
+        
         form.addEventListener('submit', async function(e) {
             e.preventDefault();
             
@@ -373,6 +426,7 @@ HTML_TEMPLATE = """
             progressSection.style.display = 'block';
             resultsSection.style.display = 'none';
             processBtn.disabled = true;
+            cancelBtn.style.display = 'inline-block';
             
             try {
                 const response = await fetch('/process', {
@@ -404,6 +458,10 @@ HTML_TEMPLATE = """
                     setTimeout(monitorProgress, 1000);
                 } else if (data.results) {
                     showResults(data.results);
+                } else if (data.status && data.status.includes('cancelado')) {
+                    // Processamento foi cancelado
+                    progressSection.style.display = 'none';
+                    resetUI();
                 } else {
                     alert('Erro durante processamento');
                     resetUI();
@@ -446,6 +504,7 @@ HTML_TEMPLATE = """
         
         function resetUI() {
             processBtn.disabled = false;
+            cancelBtn.style.display = 'none';
         }
     </script>
 </body>
@@ -496,6 +555,15 @@ def process_files():
         
     except Exception as e:
         print(f"❌ Erro na rota /process: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/cancel', methods=['POST'])
+def cancel_processing():
+    """Cancela o processamento atual."""
+    try:
+        crawler.cancel_processing()
+        return jsonify({'success': True, 'message': 'Processamento cancelado'})
+    except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/progress')
