@@ -90,7 +90,17 @@ class CrawlerPDFWeb:
         total = len(client_list)
         
         # Pré-processar PDF
-        pdf_clean = re.sub(r'[^\w\s]', ' ', pdf_lower)
+        # Normalização de casos comuns
+        pdf_normalized = pdf_lower
+        pdf_normalized = pdf_normalized.replace('s/a', 'sa')
+        pdf_normalized = pdf_normalized.replace('s.a.', 'sa')
+        pdf_normalized = pdf_normalized.replace('s.a', 'sa')
+        pdf_normalized = pdf_normalized.replace('s / a', 'sa')
+        pdf_normalized = pdf_normalized.replace('ltda.', 'ltda')
+        pdf_normalized = pdf_normalized.replace('limitada', 'ltda')
+        pdf_normalized = pdf_normalized.replace(' do brasil', 'brasil')
+        
+        pdf_clean = re.sub(r'[^\w\s]', ' ', pdf_normalized)
         pdf_spaces = re.sub(r'\s+', ' ', pdf_clean)
         pdf_words = set(pdf_spaces.split())
         
@@ -108,13 +118,30 @@ class CrawlerPDFWeb:
             client_original = str(client).strip()
             client_lower = client_original.lower()
             
+            # Normalizar cliente também
+            client_normalized = client_lower
+            client_normalized = client_normalized.replace('s/a', 'sa')
+            client_normalized = client_normalized.replace('s.a.', 'sa')
+            client_normalized = client_normalized.replace('s.a', 'sa')
+            client_normalized = client_normalized.replace('s / a', 'sa')
+            client_normalized = client_normalized.replace('ltda.', 'ltda')
+            client_normalized = client_normalized.replace('limitada', 'ltda')
+            
+            # Remover "do" opcionalmente para casos como "Banco do Brasil"
+            client_without_do = client_normalized.replace(' do ', ' ')
+            
             # Pré-processar cliente
-            client_clean = re.sub(r'[^\w\s]', ' ', client_lower)
+            client_clean = re.sub(r'[^\w\s]', ' ', client_normalized)
             client_spaces = re.sub(r'\s+', ' ', client_clean).strip()
             client_words = client_spaces.split()
             
-            # Algoritmos de busca
-            exact_match = client_lower in pdf_lower
+            # Algoritmos de busca com múltiplas variações
+            exact_match = (
+                client_lower in pdf_lower or
+                client_normalized in pdf_normalized or
+                client_without_do in pdf_normalized
+            )
+            
             clean_match = client_spaces in pdf_spaces
             
             # Busca por palavras (mais rigorosa)
@@ -122,7 +149,8 @@ class CrawlerPDFWeb:
             significant_words = []  # Palavras significativas (excluindo palavras comuns)
             common_words = {'ltda', 'sa', 'cia', 'inc', 'corp', 'limited', 'tech', 'group', 'international', 'brasil', 'brazil', 
                            'company', 'solutions', 'services', 'industria', 'comercio', 'distribuidora', 'center', 'centre',
-                           'industrias', 'laboratorio', 'farmacia', 'saude', 'health', 'medical', 'global', 'nacional'}
+                           'industrias', 'laboratorio', 'farmacia', 'saude', 'health', 'medical', 'global', 'nacional',
+                           'do', 'de', 'e', 'com', 'para', 'por', 'a'}
             
             for word in client_words:
                 if len(word) >= 3 and word not in common_words:  # Só palavras ≥3 chars e não comuns
@@ -130,7 +158,7 @@ class CrawlerPDFWeb:
                     if word in pdf_words:
                         word_matches.append(word)
             
-            # Busca flexível (mais restritiva)
+            # Busca flexível com mais variações
             flexible_matches = []
             for word in client_words:
                 if len(word) >= 4:  # Só palavras maiores para busca flexível
@@ -138,22 +166,25 @@ class CrawlerPDFWeb:
                         word,
                         word.replace('.', ''),
                         word.replace('s.a.', 'sa'),
+                        word.replace('s/a', 'sa'),
                         word.replace('ltda', ''),
                     ]
                     
                     for variation in variations:
-                        if variation and len(variation) >= 3 and variation in pdf_lower:
+                        if variation and len(variation) >= 3 and variation in pdf_normalized:
                             flexible_matches.append(f"{word}→{variation}")
                             break
             
-            # Busca fuzzy
-            similarity_partial = fuzz.partial_ratio(client_lower, pdf_lower)
-            similarity_token = fuzz.token_sort_ratio(client_lower, pdf_lower)
-            similarity_set = fuzz.token_set_ratio(client_lower, pdf_lower)
+            # Busca fuzzy com pesos diferentes
+            similarity_partial = fuzz.partial_ratio(client_normalized, pdf_normalized)
+            similarity_token = fuzz.token_sort_ratio(client_normalized, pdf_normalized) 
+            similarity_set = fuzz.token_set_ratio(client_normalized, pdf_normalized)
+            # Testar também sem o "do"
+            similarity_without_do = fuzz.token_sort_ratio(client_without_do, pdf_normalized)
             
-            best_similarity = max(similarity_partial, similarity_token, similarity_set)
+            best_similarity = max(similarity_partial, similarity_token, similarity_set, similarity_without_do)
             
-            # Determinar correspondência (critérios mais rigorosos)
+            # Determinar correspondência (critérios melhorados)
             found = False
             match_type = "N/A"
             
@@ -163,25 +194,42 @@ class CrawlerPDFWeb:
             elif clean_match:
                 found = True
                 match_type = "Sem pontuação"
-            elif len(significant_words) > 0 and len(word_matches) >= 2 and len(word_matches) / len(significant_words) >= 0.7:
-                # Precisa de pelo menos 2 palavras significativas E 70% de match
+            elif len(significant_words) > 0:
+                # Para nomes curtos (1-2 palavras), exigir match completo
+                if len(significant_words) <= 2:
+                    if len(word_matches) == len(significant_words):
+                        found = True
+                        match_type = f"Palavras ({len(word_matches)}/{len(significant_words)})"
+                # Para nomes mais longos, permitir match parcial (>=60%)
+                else:
+                    match_ratio = len(word_matches) / len(significant_words)
+                    if len(word_matches) >= 2 and match_ratio >= 0.6:
+                        found = True
+                        match_type = f"Palavras ({len(word_matches)}/{len(significant_words)})"
+            # Para casos como EMS que têm poucas palavras e todas significativas
+            elif len(client_words) == 1 and client_words[0] in pdf_words:
                 found = True
-                match_type = f"Palavras ({len(word_matches)}/{len(significant_words)})"
-            elif len(client_words) >= 3 and len(flexible_matches) >= 2:
-                # Para busca flexível, precisa de pelo menos 2 matches
+                match_type = "Palavra única"
+            elif len(client_words) >= 2 and len(flexible_matches) >= 1:
+                # Para busca flexível com nomes curtos, permitir apenas 1 match
                 found = True
                 match_type = "Flexível"
-            elif best_similarity >= self.threshold and best_similarity >= 85:
-                # Fuzzy só aceita com alta similaridade (≥85%) para evitar falsos positivos
-                found = True
-                match_type = f"Fuzzy ({best_similarity}%)"
+            elif best_similarity >= self.threshold:
+                # Controle dinâmico baseado no tamanho do nome
+                min_similarity = 85 if len(client_words) > 2 else 75
+                if best_similarity >= min_similarity:
+                    found = True
+                    match_type = f"Fuzzy ({best_similarity}%)"
             
-            # Debug para EMS
-            if "ems" in client_lower:
-                print(f"🔍 EMS DEBUG: '{client_original}' -> {found} ({match_type})")
-                print(f"   Palavras: {word_matches}")
+            # Debug para nomes de interesse
+            debug_names = ["ems", "banco brasil", "banco do brasil"]
+            should_debug = any(name in client_normalized for name in debug_names)
+            if should_debug:
+                print(f"🔍 DEBUG: '{client_original}' -> {found} ({match_type})")
+                print(f"   Normalizado: '{client_normalized}'")
+                print(f"   Palavras: {word_matches} / {significant_words}")
                 print(f"   Flexível: {flexible_matches}")
-                print(f"   Similaridade: {best_similarity}%")
+                print(f"   Similaridade: {best_similarity}% (partial:{similarity_partial}%, token:{similarity_token}%, set:{similarity_set}%, sem_do:{similarity_without_do}%)")
             
             results.append({
                 "cliente": client_original,
