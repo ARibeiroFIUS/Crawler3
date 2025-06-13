@@ -228,13 +228,320 @@ app.secret_key = 'crawler_v3_secret'
 @app.route('/')
 def index():
     return """
-    <h1>Crawler PDF V3</h1>
-    <form action="/process_v3" method="post" enctype="multipart/form-data">
-        Excel: <input type="file" name="excelFile"><br>
-        PDF: <input type="file" name="pdfFile"><br>
-        Tolerância (padrão 80): <input type="number" name="tolerance" value="80"><br>
-        <input type="submit" value="Processar">
-    </form>
+    <!DOCTYPE html>
+    <html lang="pt-BR">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>🔍 Crawler PDF V3.0</title>
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { 
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                min-height: 100vh; 
+                padding: 20px;
+            }
+            .container { max-width: 800px; margin: 0 auto; }
+            .header { 
+                text-align: center; 
+                color: white; 
+                margin-bottom: 30px; 
+                text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            }
+            .header h1 { font-size: 2.5em; margin-bottom: 10px; }
+            .header p { font-size: 1.2em; opacity: 0.9; }
+            .card { 
+                background: white; 
+                border-radius: 15px; 
+                padding: 30px; 
+                box-shadow: 0 10px 30px rgba(0,0,0,0.2); 
+                margin-bottom: 20px; 
+            }
+            .form-group { margin-bottom: 25px; }
+            label { 
+                display: block; 
+                margin-bottom: 8px; 
+                font-weight: 600; 
+                color: #333; 
+                font-size: 1.1em;
+            }
+            input[type="file"] { 
+                width: 100%; 
+                padding: 15px; 
+                border: 2px dashed #ddd; 
+                border-radius: 8px; 
+                background: #f9f9f9; 
+                font-size: 1em;
+                transition: border-color 0.3s;
+            }
+            input[type="file"]:hover { border-color: #667eea; }
+            input[type="number"] {
+                width: 150px;
+                padding: 12px;
+                border: 2px solid #ddd;
+                border-radius: 8px;
+                font-size: 1em;
+            }
+            .btn { 
+                padding: 15px 30px; 
+                border: none; 
+                border-radius: 8px; 
+                font-weight: 600; 
+                cursor: pointer; 
+                transition: all 0.3s; 
+                font-size: 1.1em;
+                text-transform: uppercase;
+                letter-spacing: 1px;
+            }
+            .btn-primary { 
+                background: linear-gradient(45deg, #667eea, #764ba2); 
+                color: white; 
+                box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+            }
+            .btn-primary:hover { 
+                transform: translateY(-2px); 
+                box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+            }
+            .btn:disabled { 
+                opacity: 0.6; 
+                cursor: not-allowed; 
+                transform: none !important;
+            }
+            .progress-section { 
+                display: none; 
+                text-align: center;
+            }
+            .progress-bar { 
+                width: 100%; 
+                height: 25px; 
+                background: #f0f0f0; 
+                border-radius: 15px; 
+                overflow: hidden; 
+                margin: 20px 0; 
+                box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
+            }
+            .progress-fill { 
+                height: 100%; 
+                background: linear-gradient(90deg, #667eea, #764ba2); 
+                transition: width 0.3s; 
+                border-radius: 15px;
+            }
+            .status-message {
+                font-size: 1.1em;
+                color: #333;
+                margin: 15px 0;
+                font-weight: 500;
+            }
+            .results-section { 
+                display: none; 
+            }
+            .stats { 
+                display: grid; 
+                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); 
+                gap: 20px; 
+                margin: 25px 0; 
+            }
+            .stat-card { 
+                text-align: center; 
+                padding: 20px; 
+                background: linear-gradient(135deg, #f8f9fa, #e9ecef); 
+                border-radius: 12px; 
+                box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+            }
+            .stat-number { 
+                font-size: 2.5em; 
+                font-weight: bold; 
+                color: #667eea; 
+                margin-bottom: 5px;
+            }
+            .stat-label { 
+                color: #666; 
+                font-weight: 500;
+                text-transform: uppercase;
+                letter-spacing: 1px;
+                font-size: 0.9em;
+            }
+            .download-btn { 
+                background: linear-gradient(45deg, #28a745, #20c997); 
+                color: white; 
+                box-shadow: 0 4px 15px rgba(40, 167, 69, 0.4);
+            }
+            .download-btn:hover { 
+                transform: translateY(-2px); 
+                box-shadow: 0 6px 20px rgba(40, 167, 69, 0.6);
+            }
+            .version-badge {
+                background: rgba(255,255,255,0.2);
+                padding: 5px 15px;
+                border-radius: 20px;
+                font-size: 0.9em;
+                margin-top: 10px;
+                display: inline-block;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>🔍 Crawler PDF V3.0</h1>
+                <p>Busque clientes do Excel em documentos PDF com IA</p>
+                <div class="version-badge">✨ Algoritmo Otimizado com RapidFuzz</div>
+            </div>
+
+            <div class="card">
+                <form id="crawlerForm" enctype="multipart/form-data">
+                    <div class="form-group">
+                        <label for="excelFile">📊 Arquivo Excel com lista de clientes:</label>
+                        <input type="file" id="excelFile" name="excelFile" accept=".xlsx,.xls" required>
+                        <small style="color: #666; margin-top: 5px; display: block;">
+                            💡 O sistema lerá a primeira coluna do Excel
+                        </small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="pdfFile">📄 Arquivo PDF para busca:</label>
+                        <input type="file" id="pdfFile" name="pdfFile" accept=".pdf" required>
+                        <small style="color: #666; margin-top: 5px; display: block;">
+                            💡 Documentos QGC, processos jurídicos, etc.
+                        </small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="tolerance">🎯 Tolerância de Similaridade:</label>
+                        <input type="number" id="tolerance" name="tolerance" min="50" max="100" value="80">
+                        <small style="color: #666; margin-left: 10px;">
+                            (50-100%) - Recomendado: 80%
+                        </small>
+                    </div>
+
+                    <button type="submit" id="processBtn" class="btn btn-primary">
+                        🚀 Processar Arquivos
+                    </button>
+                </form>
+            </div>
+
+            <div class="card progress-section" id="progressSection">
+                <h3>⏳ Processando...</h3>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+                </div>
+                <div class="status-message" id="statusMessage">Iniciando processamento...</div>
+            </div>
+
+            <div class="card results-section" id="resultsSection">
+                <h3>📊 Resultados do Processamento</h3>
+                <div class="stats" id="resultsStats"></div>
+                <button class="btn download-btn" id="downloadBtn">
+                    💾 Baixar Planilha de Resultados
+                </button>
+            </div>
+        </div>
+
+        <script>
+            const form = document.getElementById('crawlerForm');
+            const processBtn = document.getElementById('processBtn');
+            const progressSection = document.getElementById('progressSection');
+            const resultsSection = document.getElementById('resultsSection');
+            const progressFill = document.getElementById('progressFill');
+            const statusMessage = document.getElementById('statusMessage');
+            
+            let currentResultFile = null;
+            
+            form.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                
+                const formData = new FormData(form);
+                
+                // Mostrar seção de progresso
+                progressSection.style.display = 'block';
+                resultsSection.style.display = 'none';
+                processBtn.disabled = true;
+                processBtn.textContent = '⏳ Processando...';
+                
+                try {
+                    const response = await fetch('/process_v3', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    if (response.ok) {
+                        monitorProgress();
+                    } else {
+                        throw new Error('Erro no servidor');
+                    }
+                    
+                } catch (error) {
+                    alert('Erro: ' + error.message);
+                    resetUI();
+                }
+            });
+            
+            async function monitorProgress() {
+                try {
+                    const response = await fetch('/progress_v3');
+                    const data = await response.json();
+                    
+                    progressFill.style.width = data.progress + '%';
+                    statusMessage.textContent = data.status;
+                    
+                    if (data.processing) {
+                        setTimeout(monitorProgress, 1000);
+                    } else if (data.results) {
+                        showResults(data.results);
+                    } else {
+                        alert('Erro durante processamento');
+                        resetUI();
+                    }
+                    
+                } catch (error) {
+                    console.error('Erro:', error);
+                    setTimeout(monitorProgress, 2000);
+                }
+            }
+            
+            function showResults(results) {
+                progressSection.style.display = 'none';
+                resultsSection.style.display = 'block';
+                
+                const successRate = ((results.found / results.total) * 100).toFixed(1);
+                
+                document.getElementById('resultsStats').innerHTML = `
+                    <div class="stat-card">
+                        <div class="stat-number">${results.total}</div>
+                        <div class="stat-label">Total de Clientes</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">${results.found}</div>
+                        <div class="stat-label">Encontrados</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">${successRate}%</div>
+                        <div class="stat-label">Taxa de Sucesso</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">${results.processing_time}s</div>
+                        <div class="stat-label">Tempo de Processamento</div>
+                    </div>
+                `;
+                
+                currentResultFile = results.file;
+                resetUI();
+            }
+            
+            document.getElementById('downloadBtn').addEventListener('click', function() {
+                if (currentResultFile) {
+                    window.open('/download/' + encodeURIComponent(currentResultFile));
+                }
+            });
+            
+            function resetUI() {
+                processBtn.disabled = false;
+                processBtn.textContent = '🚀 Processar Arquivos';
+            }
+        </script>
+    </body>
+    </html>
     """
 
 @app.route('/process_v3', methods=['POST'])
