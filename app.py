@@ -25,56 +25,151 @@ import re
 # ----------- Funções de Normalização e Aliases -----------
 
 COMMON_WORDS = {
-    'sa', 's.a', 'ltda', 'eireli', 'me', 'empresa', 'cia', 'industria', 'comercio',
-    'do', 'da', 'de', 'dos', 'das', 'the', 'inc', 'corp', 'co', 'group', 'solutions',
-    'holding', 'brasil', 'brazil', 'financeira', 'banco', 'administradora', 'servicos', 'serviços'
+    'sa', 's.a', 'ltda', 'eireli', 'me', 'empresa', 'cia', 'inc', 'corp', 'co', 
+    'do', 'da', 'de', 'dos', 'das', 'e', 'em', 'com', 'para', 'por', 'a', 'o', 'as', 'os',
+    'the', 'and', 'or', 'of', 'in', 'to', 'for', 'at', 'by', 'with'
 }
 
 def normalize_name(name):
-    """Remove acentos, pontuação, termos genéricos e coloca tudo minúsculo"""
+    """Remove acentos, pontuação e termos muito genéricos, mas preserva palavras importantes"""
+    if not name or not isinstance(name, str):
+        return ""
+    
     name = unidecode.unidecode(name)  # Remove acentos
     name = name.lower()
-    name = re.sub(r'[^\w\s]', '', name)  # Remove pontuação
-    words = [w for w in name.split() if w not in COMMON_WORDS and len(w) > 2]
+    name = re.sub(r'[^\w\s]', ' ', name)  # Remove pontuação, substitui por espaço
+    name = re.sub(r'\s+', ' ', name).strip()  # Normaliza espaços
+    
+    # Remove apenas palavras muito genéticas e curtas
+    words = []
+    for word in name.split():
+        if len(word) >= 3 and word not in COMMON_WORDS:
+            words.append(word)
+    
     return ' '.join(words)
 
-def generate_aliases(name):
-    """Gera possíveis aliases removendo partes menos relevantes"""
-    base = normalize_name(name)
-    tokens = base.split()
-    aliases = set()
-    for i in range(len(tokens)):
-        for j in range(i+1, len(tokens)+1):
-            alias = ' '.join(tokens[i:j])
-            if len(alias) >= 3:
-                aliases.add(alias)
-    aliases.add(base)  # garante o nome completo também
-    return aliases
-
 def match_client_in_text(client_name, text, min_threshold=80):
+    """Busca nomes de empresas completos com tolerância para variações."""
     text_normalized = normalize_name(text)
-    aliases = generate_aliases(client_name)
+    client_normalized = normalize_name(client_name)
+    
+    if not client_normalized or len(client_normalized) < 3:
+        return {
+            'found': False,
+            'confidence': 0,
+            'alias': client_normalized,
+            'context': 'Nome muito curto após normalização'
+        }
+    
+    client_words = client_normalized.split()
     melhor_score = 0
     melhor_alias = ''
     melhor_contexto = ''
-    for alias in aliases:
-        if not alias or len(alias) < 3:
+    
+    # Estratégia 1: Nome completo com variações de pontuação/formatação
+    # Criar variações do nome original para lidar com S.A./S/A, etc.
+    original_lower = client_name.lower()
+    variações_nome = [
+        client_normalized,
+        original_lower,
+        original_lower.replace('s.a.', 'sa').replace('s/a', 'sa').replace('s.a', 'sa'),
+        original_lower.replace('ltda.', 'ltda').replace('limitada', 'ltda'),
+        # Remover preposições opcionais
+        client_normalized.replace(' do ', ' ').replace(' da ', ' ').replace(' de ', ' '),
+        # Versão sem espaços para casos extremos
+        client_normalized.replace(' ', '')
+    ]
+    
+    # Testar cada variação
+    for variacao in variações_nome:
+        if not variacao or len(variacao) < 3:
             continue
-        score = fuzz.partial_ratio(alias, text_normalized)
+            
+        # Usar partial_ratio para encontrar a variação dentro do texto
+        score = fuzz.partial_ratio(variacao, text_normalized)
+        
         if score > melhor_score:
             melhor_score = score
-            melhor_alias = alias
-            idx = text_normalized.find(alias)
+            melhor_alias = variacao
+            
+            # Encontrar contexto
+            idx = text_normalized.find(variacao)
             if idx >= 0:
-                start = max(0, idx-100)
-                end = min(len(text), idx+len(alias)+100)
+                start = max(0, idx-50)
+                end = min(len(text), idx+len(variacao)+50)
                 melhor_contexto = text[start:end]
-        if melhor_score >= 95:
-            break
-    found = melhor_score >= min_threshold
+    
+    # Estratégia 2: Para nomes longos, testar sem algumas palavras menos importantes
+    if len(client_words) >= 3:
+        # Testar removendo uma palavra por vez (exceto a primeira)
+        for i in range(1, len(client_words)):
+            palavras_sem_uma = client_words[:i] + client_words[i+1:]
+            variacao = ' '.join(palavras_sem_uma)
+            
+            if len(variacao) >= 6:  # Manter um mínimo razoável
+                score = fuzz.partial_ratio(variacao, text_normalized)
+                
+                if score > melhor_score:
+                    melhor_score = score
+                    melhor_alias = variacao
+                    
+                    idx = text_normalized.find(variacao)
+                    if idx >= 0:
+                        start = max(0, idx-50)
+                        end = min(len(text), idx+len(variacao)+50)
+                        melhor_contexto = text[start:end]
+    
+    # Estratégia 3: Busca por sequências de palavras significativas
+    # Para nomes com 2+ palavras, exigir que pelo menos 2 palavras consecutivas sejam encontradas
+    if len(client_words) >= 2:
+        for i in range(len(client_words) - 1):
+            # Testar pares de palavras consecutivas
+            par_palavras = ' '.join(client_words[i:i+2])
+            if len(par_palavras) >= 6:
+                score = fuzz.partial_ratio(par_palavras, text_normalized)
+                
+                # Bonus se encontrar mais palavras do nome na sequência
+                if score >= 85:  # Só considerar se o par já tem boa correspondência
+                    # Verificar quantas palavras do nome aparecem na sequência
+                    palavras_encontradas = 0
+                    for word in client_words:
+                        if word in text_normalized:
+                            palavras_encontradas += 1
+                    
+                    # Ajustar score baseado na proporção de palavras encontradas
+                    proporcao = palavras_encontradas / len(client_words)
+                    score_ajustado = score * (0.7 + 0.3 * proporcao)
+                    
+                    if score_ajustado > melhor_score:
+                        melhor_score = score_ajustado
+                        melhor_alias = f"{par_palavras} (+{palavras_encontradas-2} palavras)"
+                        
+                        idx = text_normalized.find(par_palavras)
+                        if idx >= 0:
+                            start = max(0, idx-50)
+                            end = min(len(text), idx+len(par_palavras)+50)
+                            melhor_contexto = text[start:end]
+    
+    # Critérios para determinar se foi encontrado
+    found = False
+    
+    if len(client_words) == 1:
+        # Para uma palavra: só aceitar se for muito específica e com score altíssimo
+        if len(client_words[0]) >= 6 and melhor_score >= 98:
+            found = True
+    elif len(client_words) == 2:
+        # Para duas palavras: score alto
+        if melhor_score >= 85:
+            found = True
+    else:
+        # Para 3+ palavras: usar threshold, mas com mínimo de 80%
+        threshold_adjusted = max(min_threshold, 80)
+        if melhor_score >= threshold_adjusted:
+            found = True
+    
     return {
         'found': found,
-        'confidence': melhor_score,
+        'confidence': int(melhor_score),
         'alias': melhor_alias,
         'context': melhor_contexto.strip()
     }
