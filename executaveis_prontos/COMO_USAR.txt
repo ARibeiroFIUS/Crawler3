@@ -1,0 +1,49 @@
+🚀 EXECUTÁVEIS DO CRAWLER DE CLIENTES EM PDF
+==========================================
+
+📁 ARQUIVOS INCLUÍDOS:
+
+🌐 CrawlerPDF_Web
+   • Interface web moderna no navegador
+   • Execute e acesse: http://localhost:5000
+   • Mais fácil de usar - recomendado para iniciantes
+
+⌨️ CrawlerPDF_Console  
+   • Versão linha de comando
+   • Uso: ./CrawlerPDF_Console arquivo.xlsx documento.pdf -t 80
+   • Ideal para automação e scripts
+
+📊 CrawlerPDF_Simples
+   • Versão básica simplificada
+   • Uso: ./CrawlerPDF_Simples
+   • Para uso rápido com arquivos padrão
+
+🔧 COMO USAR:
+
+1. INTERFACE WEB (Recomendado):
+   - Execute: ./CrawlerPDF_Web
+   - Acesse: http://localhost:5000 no navegador
+   - Selecione seus arquivos Excel e PDF
+   - Configure tolerância (80% recomendado)
+   - Clique "INICIAR PROCESSAMENTO"
+
+2. LINHA DE COMANDO:
+   - Execute: ./CrawlerPDF_Console arquivo.xlsx documento.pdf
+   - Adicione -t 80 para tolerância de 80%
+   - Adicione -o resultado.xlsx para arquivo específico
+
+3. VERSÃO SIMPLES:
+   - Coloque clientes.xlsx e documento.pdf na pasta
+   - Execute: ./CrawlerPDF_Simples
+   - Resultados em output/
+
+💡 DICAS:
+• Primeira execução pode ser lenta (normal)
+• Mac: Pode pedir permissão em Preferências > Segurança
+• Windows: Pode ser bloqueado pelo antivírus inicialmente
+• Tamanho: ~35MB cada (incluem Python e dependências)
+
+🎯 NÃO PRECISA INSTALAR PYTHON OU DEPENDÊNCIAS!
+Estes executáveis funcionam sozinhos em qualquer computador.
+
+Desenvolvido com ❤️ para sua produtividade!

@@ -1,0 +1,4 @@
+([('CrawlerPDF_Desktop_FINAL',
+   '/Users/andreribeiro/Downloads/Desenvolver crawler para buscar dados de '
+   'Excel em PDFs/dist/CrawlerPDF_Desktop_FINAL',
+   'EXECUTABLE')],)

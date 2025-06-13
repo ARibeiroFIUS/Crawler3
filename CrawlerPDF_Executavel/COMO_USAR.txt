@@ -1,0 +1,46 @@
+🚀 CRAWLER DE CLIENTES EM PDF
+================================
+
+📋 COMO USAR:
+
+1️⃣ INTERFACE GRÁFICA (Recomendado):
+   • Execute: CrawlerPDF_Final (clique duplo)
+   • Uma janela será aberta
+   • Selecione arquivo Excel e PDF
+   • Configure tolerância (80% recomendado)
+   • Clique "PROCESSAR ARQUIVOS"
+
+2️⃣ LINHA DE COMANDO:
+   • Terminal/CMD: ./CrawlerPDF_Final arquivo.xlsx documento.pdf
+   • Exemplo: ./CrawlerPDF_Final clientes.xlsx documento.pdf
+
+📁 ARQUIVOS INCLUÍDOS:
+   • CrawlerPDF_Final - Executável principal
+   • clientes.xlsx - Arquivo exemplo
+   • documento.pdf - Documento exemplo
+
+💡 CARACTERÍSTICAS:
+   ✅ Não precisa de Python instalado
+   ✅ Interface gráfica amigável
+   ✅ Suporte a linha de comando
+   ✅ Busca fuzzy com 80% tolerância
+   ✅ Resultados salvos em Excel
+   ✅ Funciona offline
+
+🔧 PRIMEIRO USO:
+   • Primeira execução pode ser lenta (normal)
+   • Mac: Pode pedir permissão em Preferências > Segurança
+   • Windows: Pode ser bloqueado pelo antivírus
+
+📞 SUPORTE:
+   • Interface intuitiva com logs detalhados
+   • Mensagens de erro claras
+   • Progresso visual do processamento
+
+🎯 RESULTADO:
+   • Arquivo Excel com lista de clientes
+   • Coluna "encontrado": Sim/Não
+   • Coluna "similaridade": Percentual
+   • Salvo automaticamente com timestamp
+
+Desenvolvido com ❤️ para sua produtividade!

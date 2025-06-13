@@ -1,0 +1,78 @@
+🚀 CRAWLER PDF - APLICAÇÃO DESKTOP
+=====================================
+
+📱 COMO USAR:
+
+1️⃣ EXECUTAR A APLICAÇÃO:
+   • Clique duas vezes em: CrawlerPDF_Desktop
+   • A aplicação abrirá automaticamente no seu navegador
+   • Uma janela moderna será exibida
+
+2️⃣ USAR A INTERFACE:
+   • 📊 Selecione o arquivo Excel com a lista de clientes
+   • 📄 Selecione o arquivo PDF para buscar
+   • 🎯 Ajuste a tolerância (80% recomendado)
+   • 🚀 Clique em "PROCESSAR ARQUIVOS"
+
+3️⃣ ACOMPANHAR O PROGRESSO:
+   • Barra de progresso visual
+   • Status em tempo real
+   • Estatísticas detalhadas
+
+4️⃣ BAIXAR RESULTADOS:
+   • Arquivo Excel gerado automaticamente
+   • Botão de download na interface
+   • Resultados salvos com timestamp
+
+💡 CARACTERÍSTICAS:
+
+✅ Interface moderna e intuitiva
+✅ Funciona como aplicação desktop
+✅ Não precisa de Python instalado
+✅ Abre automaticamente no navegador
+✅ Progresso visual em tempo real
+✅ Busca fuzzy com tolerância ajustável
+✅ Resultados em Excel profissional
+✅ Funciona offline (sem internet)
+
+🔧 PRIMEIRO USO:
+
+• Mac: Pode pedir permissão em "Preferências do Sistema > Segurança"
+• Windows: Pode ser bloqueado pelo antivírus inicialmente
+• Primeira execução pode ser mais lenta (normal)
+• O navegador abrirá automaticamente em http://localhost:5000
+
+📁 ARQUIVOS INCLUÍDOS:
+
+• CrawlerPDF_Desktop - Aplicação principal
+• clientes.xlsx - Arquivo exemplo para teste
+• documento.pdf - Documento exemplo para teste
+• COMO_USAR.txt - Este arquivo de instruções
+
+🎯 RESULTADO:
+
+A aplicação gera um arquivo Excel com:
+• Lista completa de clientes
+• Status: "Sim" ou "Não" para cada cliente
+• Percentual de similaridade
+• Tipo de correspondência (Exata/Fuzzy)
+
+🆘 SUPORTE:
+
+• Interface com mensagens claras
+• Logs detalhados durante processamento
+• Validação automática de arquivos
+• Tratamento de erros amigável
+
+🏆 VANTAGENS:
+
+• Não precisa abrir terminal
+• Interface gráfica profissional
+• Funciona em Mac, Windows e Linux
+• Processamento rápido e eficiente
+• Resultados organizados e claros
+
+Desenvolvido com ❤️ para maximizar sua produtividade!
+
+Para fechar a aplicação, simplesmente feche a janela do navegador
+e pressione Ctrl+C no terminal (se aparecer).
