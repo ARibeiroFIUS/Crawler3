@@ -153,10 +153,20 @@ def match_client_in_text(client_name, text, min_threshold=80):
     # Critérios para determinar se foi encontrado
     found = False
     
+    # Verificar se o nome original tinha sufixos corporativos (S.A., LTDA, etc.)
+    original_lower = client_name.lower()
+    has_corporate_suffix = any(suffix in original_lower for suffix in ['s.a.', 's/a', 'ltda', 'eireli', 'me'])
+    
     if len(client_words) == 1:
-        # Para uma palavra: só aceitar se for muito específica e com score altíssimo
-        if len(client_words[0]) >= 6 and melhor_score >= 98:
-            found = True
+        # Para uma palavra: critério mais flexível se tinha sufixo corporativo
+        if has_corporate_suffix:
+            # Se tinha sufixo corporativo, aceitar palavras menores com score alto
+            if len(client_words[0]) >= 3 and melhor_score >= 95:
+                found = True
+        else:
+            # Critério original para palavras sem sufixo
+            if len(client_words[0]) >= 6 and melhor_score >= 98:
+                found = True
     elif len(client_words) == 2:
         # Para duas palavras: score alto
         if melhor_score >= 85:
