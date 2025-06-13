@@ -213,7 +213,7 @@ def buscar_palavras_chave_no_texto_rigoroso(palavras_chave, texto, min_threshold
             'context': 'Nenhuma palavra-chave encontrada'
         }
     
-    # Critério RIGOROSO para considerar "encontrado"
+    # Critério INTELIGENTE para considerar "encontrado"
     proporcao_encontrada = len(palavras_encontradas) / len(palavras_chave)
     confianca_media = sum(scores) / len(scores)
     
@@ -222,9 +222,21 @@ def buscar_palavras_chave_no_texto_rigoroso(palavras_chave, texto, min_threshold
     if len(palavras_chave) == 1:
         # Uma palavra: deve encontrar com 95%+ de confiança
         found = confianca_media >= 95
+    elif len(palavras_chave) == 2:
+        # Duas palavras: encontrar pelo menos UMA palavra significativa (sigla/nome único)
+        # Priorizar palavras curtas (siglas) ou palavras longas e específicas
+        palavras_prioritarias = [p for p in palavras_chave if len(p) <= 4 or len(p) >= 6]
+        if palavras_prioritarias:
+            # Se tem palavra prioritária, deve encontrar pelo menos ela
+            palavras_prioritarias_encontradas = [p for p in palavras_encontradas 
+                                               if any(pp in p.lower() for pp in palavras_prioritarias)]
+            found = len(palavras_prioritarias_encontradas) > 0 and confianca_media >= 95
+        else:
+            # Senão, deve encontrar pelo menos 50% das palavras
+            found = proporcao_encontrada >= 0.5 and confianca_media >= 90
     else:
-        # Múltiplas palavras: deve encontrar TODAS com 90%+ de confiança
-        found = proporcao_encontrada >= 0.8 and confianca_media >= 90
+        # Múltiplas palavras: deve encontrar pelo menos 60% com 90%+ de confiança
+        found = proporcao_encontrada >= 0.6 and confianca_media >= 90
     
     confianca_final = int(confianca_media * proporcao_encontrada)
     
