@@ -28,6 +28,7 @@ class CrawlerPDFWeb:
         self.last_output_file = None
         self.last_output_filename = None
         self.cancelled = False
+        self.document_type = "processo"  # "qgc" ou "processo"
         
     def read_excel_clients(self, excel_path):
         """Lê clientes do arquivo Excel."""
@@ -282,13 +283,14 @@ class CrawlerPDFWeb:
         self.results = []
         self.status_message = "Pronto para processar"
     
-    def process_files(self, excel_path, pdf_path, threshold):
+    def process_files(self, excel_path, pdf_path, threshold, document_type="processo"):
         """Processa os arquivos."""
-        print(f"🚀 Iniciando processamento com threshold={threshold}")
+        print(f"🚀 Iniciando processamento com threshold={threshold}, tipo={document_type}")
         self.processing = True
         self.cancelled = False  # Reset cancelamento
         self.progress = 0
         self.threshold = threshold
+        self.document_type = document_type
         
         try:
             # Ler Excel
@@ -309,6 +311,14 @@ class CrawlerPDFWeb:
                 self.processing = False
                 return None
             
+            # Processar baseado no tipo de documento
+            if document_type == "qgc":
+                self.status_message = "📋 Extraindo seção QGC do documento..."
+                pdf_text = self.extract_qgc_section(pdf_text)
+                print(f"📋 Modo QGC: analisando {len(pdf_text)} caracteres")
+            else:
+                print(f"📄 Modo Processo Íntegra: analisando {len(pdf_text)} caracteres")
+            
             # Buscar correspondências
             self.status_message = "🔍 Buscando correspondências..."
             results = self.find_matches(clients, pdf_text)
@@ -320,21 +330,25 @@ class CrawlerPDFWeb:
             
             # Salvar resultados
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_filename = f"resultados_crawler_{timestamp}.xlsx"
+            doc_type_suffix = "QGC" if document_type == "qgc" else "Processo"
+            output_filename = f"resultados_crawler_{doc_type_suffix}_{timestamp}.xlsx"
             
             # Para servidores online, usar diretório temporário
             output_path = os.path.join(tempfile.gettempdir(), output_filename)
             
             print(f"💾 Salvando em: {output_path}")
             
+            # Adicionar informações sobre o tipo de documento nos resultados
             df = pd.DataFrame(results)
+            df.insert(0, 'tipo_documento', document_type.upper())
             df.to_excel(output_path, index=False)
             
             self.last_output_file = output_path
             self.last_output_filename = output_filename
             
             found_count = sum(1 for r in results if r['encontrado'] == 'Sim')
-            self.status_message = f"✅ Concluído! {found_count}/{len(results)} clientes encontrados"
+            doc_info = f"({document_type.upper()})"
+            self.status_message = f"✅ Concluído! {found_count}/{len(results)} clientes encontrados {doc_info}"
             self.results = results
             self.processing = False
             
@@ -345,7 +359,8 @@ class CrawlerPDFWeb:
                 'total': len(results),
                 'found': found_count,
                 'file': output_filename,
-                'results': results
+                'results': results,
+                'document_type': document_type
             }
             
         except Exception as e:
@@ -353,6 +368,73 @@ class CrawlerPDFWeb:
             self.status_message = f"❌ Erro: {str(e)}"
             self.processing = False
             return None
+
+    def extract_qgc_section(self, pdf_text):
+        """Extrai apenas a seção QGC do PDF."""
+        try:
+            text_lower = pdf_text.lower()
+            
+            # Padrões para identificar início do QGC
+            qgc_patterns = [
+                r'quadro\s+geral\s+de\s+cotistas',
+                r'qgc',
+                r'quadro.*cotistas',
+                r'composição\s+societária',
+                r'estrutura\s+societária'
+            ]
+            
+            # Padrões para identificar fim do QGC
+            end_patterns = [
+                r'administração',
+                r'diretoria',
+                r'conselho',
+                r'representação',
+                r'objeto\s+social',
+                r'atividade\s+principal',
+                r'capital\s+social'
+            ]
+            
+            qgc_start = -1
+            qgc_end = len(pdf_text)
+            
+            # Encontrar início do QGC
+            for pattern in qgc_patterns:
+                match = re.search(pattern, text_lower)
+                if match:
+                    qgc_start = match.start()
+                    print(f"📋 QGC encontrado em: posição {qgc_start} (padrão: {pattern})")
+                    break
+            
+            if qgc_start == -1:
+                print("⚠️ Seção QGC não encontrada, analisando documento completo")
+                return pdf_text
+            
+            # Encontrar fim do QGC (procurar a partir do início encontrado)
+            text_after_qgc = pdf_text[qgc_start:]
+            text_after_qgc_lower = text_after_qgc.lower()
+            
+            for pattern in end_patterns:
+                match = re.search(pattern, text_after_qgc_lower)
+                if match:
+                    qgc_end = qgc_start + match.start()
+                    print(f"📋 Fim do QGC em: posição {qgc_end} (padrão: {pattern})")
+                    break
+            
+            # Extrair seção QGC
+            qgc_section = pdf_text[qgc_start:qgc_end]
+            
+            print(f"📋 QGC extraído: {len(qgc_section)} caracteres (de {len(pdf_text)} total)")
+            
+            # Se a seção ficou muito pequena, usar documento completo
+            if len(qgc_section) < 200:
+                print("⚠️ Seção QGC muito pequena, usando documento completo")
+                return pdf_text
+            
+            return qgc_section
+            
+        except Exception as e:
+            print(f"❌ Erro ao extrair QGC: {e}")
+            return pdf_text
 
 # Instância global do crawler
 crawler = CrawlerPDFWeb()
@@ -416,6 +498,23 @@ HTML_TEMPLATE = """
                 <div class="form-group">
                     <label for="pdfFile">📄 Arquivo PDF para busca:</label>
                     <input type="file" id="pdfFile" name="pdfFile" accept=".pdf" required>
+                </div>
+
+                <div class="form-group">
+                    <label>📋 Tipo de Documento:</label>
+                    <div style="display: flex; gap: 20px; margin-top: 10px;">
+                        <label style="display: flex; align-items: center; gap: 8px; font-weight: normal;">
+                            <input type="radio" name="documentType" value="processo" checked>
+                            📄 Processo na Íntegra
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 8px; font-weight: normal;">
+                            <input type="radio" name="documentType" value="qgc">
+                            📋 Apenas QGC (Quadro Geral de Cotistas)
+                        </label>
+                    </div>
+                    <small style="color: #666; margin-top: 5px; display: block;">
+                        💡 <strong>QGC:</strong> Busca apenas na seção de cotistas/sócios. <strong>Processo:</strong> Busca em todo o documento.
+                    </small>
                 </div>
 
                 <div class="form-group">
@@ -596,11 +695,13 @@ def process_files():
         excel_file = request.files.get('excelFile')
         pdf_file = request.files.get('pdfFile')
         tolerance = request.form.get('tolerance')
+        document_type = request.form.get('documentType', 'processo')
         
         if not excel_file or not pdf_file:
             return jsonify({'success': False, 'error': 'Arquivos não enviados'}), 400
         
         threshold = int(tolerance)
+        print(f"📋 Tipo de documento selecionado: {document_type}")
         
         # Salvar arquivos temporários
         temp_dir = tempfile.mkdtemp()
@@ -614,7 +715,7 @@ def process_files():
         
         # Processar em thread separada
         def process_thread():
-            result = crawler.process_files(excel_path, pdf_path, threshold)
+            result = crawler.process_files(excel_path, pdf_path, threshold, document_type)
             # Limpar arquivos temporários
             shutil.rmtree(temp_dir, ignore_errors=True)
         
