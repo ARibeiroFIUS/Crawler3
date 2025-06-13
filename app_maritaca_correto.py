@@ -47,24 +47,34 @@ def extrair_palavras_chave_maritaca_correto(nome_cliente, api_key):
         )
         
         prompt = f"""
-Analise o nome da empresa "{nome_cliente}" e extraia as 1-2 palavras mais significativas e únicas que melhor identificam esta empresa.
+Analise o nome da empresa "{nome_cliente}" e extraia APENAS a palavra mais significativa e única que melhor identifica esta empresa.
+
+PRIORIDADE ABSOLUTA (nesta ordem):
+1. NOMES PRÓPRIOS ÚNICOS (Mauad, Vipex, Furtan, Galena, Farmabase, Braswell, LongPing)
+2. SIGLAS de 2-4 letras (EMS, QGC, ABC, XYZ)
+3. SOBRENOMES específicos (Silva, Pupin, Santos)
+
+NUNCA ESCOLHA palavras genéricas como:
+- Transportes, Máquinas, Indústria, Comércio, Produtos, Serviços, Materiais, Engenharia, Construtora, Química, Farmacêutica, Papel, Celulose, Saúde, Animal, Agropecuária, Biotecnologia
 
 REGRAS RIGOROSAS:
-- Ignore completamente: S.A., LTDA, EIRELI, ME, CIA, INC, CORP, DO, DA, DE, E, EM, COM, PARA, POR
-- Se for sigla (ex: EMS, QGC), mantenha APENAS a sigla
-- Se for nome composto, escolha APENAS as palavras mais distintivas
-- MÁXIMO 2 palavras
-- Prefira palavras longas e específicas
-- Evite palavras genéricas como "materiais", "produtos", "serviços"
+- Ignore: S.A., LTDA, EIRELI, ME, CIA, INC, CORP, DO, DA, DE, E, EM, COM, PARA, POR, BRASIL
+- Priorize SEMPRE nomes próprios únicos sobre palavras genéricas
+- Se houver sigla, escolha a sigla
+- Se não houver sigla, escolha o nome próprio mais distintivo
+- NUNCA escolha palavras que descrevem o tipo de negócio
 
-EXEMPLOS:
-- "EMS S.A." → ["EMS"]
-- "Viapol Ltda" → ["Viapol"]  
-- "Produtos Alimentícios Café Ltda" → ["Alimentícios", "Café"]
-- "Sun Ace Brasil Indústria Ltda" → ["Sun", "Ace"]
-- "QGC Engenharia" → ["QGC"]
+EXEMPLOS CORRETOS:
+- "Mauad Franqueadora Ltda." → ["Mauad"] (nome próprio único)
+- "Vipex Transportes Ltda." → ["Vipex"] (NÃO "Transportes")
+- "Máquinas Furtan Ltda." → ["Furtan"] (NÃO "Máquinas")
+- "Galeria Química e Farmacêutica Ltda." → ["Galena"] (nome próprio)
+- "Farmabase Saúde Animal Ltda." → ["Farmabase"] (nome próprio)
+- "José Pupin Agropecuária" → ["Pupin"] (sobrenome específico)
+- "LongPing High - Tech Biotecnologia" → ["LongPing"] (nome próprio)
+- "EMS S.A." → ["EMS"] (sigla)
 
-Retorne apenas as palavras mais importantes para identificar unicamente esta empresa.
+Retorne APENAS o nome próprio mais distintivo que identifica unicamente esta empresa.
 """
 
         # Usar saídas estruturadas com Pydantic
