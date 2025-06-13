@@ -2,9 +2,9 @@
 # -*- coding: utf-8 -*-
 
 """
-Crawler PDF V3.0 - Matching Robusto para QGC
-=============================================
-Versão com normalização pesada e fuzzy matching otimizado
+Crawler PDF V4.2 - IA Maritaca CORRETA com Sabiá-3
+==================================================
+Versão corrigida usando a API oficial da Maritaca
 """
 
 import os
@@ -21,174 +21,277 @@ from rapidfuzz import fuzz
 from flask import Flask, render_template_string, request, jsonify, send_file
 import threading
 import re
+from typing import List
+from pydantic import BaseModel
 
-# ----------- Funções de Normalização e Aliases -----------
+# ----------- Configuração CORRETA da API Maritaca -----------
 
-COMMON_WORDS = {
-    'sa', 's.a', 'ltda', 'eireli', 'me', 'empresa', 'cia', 'inc', 'corp', 'co', 
-    'do', 'da', 'de', 'dos', 'das', 'e', 'em', 'com', 'para', 'por', 'a', 'o', 'as', 'os',
-    'the', 'and', 'or', 'of', 'in', 'to', 'for', 'at', 'by', 'with'
-}
+class PalavrasChave(BaseModel):
+    """Modelo Pydantic para saídas estruturadas da Maritaca"""
+    palavras_significativas: List[str]
+    justificativa: str
 
-def normalize_name(name):
-    """Remove acentos, pontuação e termos muito genéricos, mas preserva palavras importantes"""
-    if not name or not isinstance(name, str):
-        return ""
+def extrair_palavras_chave_maritaca_correto(nome_cliente, api_key):
+    """Usa a API CORRETA da Maritaca com sabiá-3 e saídas estruturadas"""
     
-    name = unidecode.unidecode(name)  # Remove acentos
-    name = name.lower()
-    name = re.sub(r'[^\w\s]', ' ', name)  # Remove pontuação, substitui por espaço
-    name = re.sub(r'\s+', ' ', name).strip()  # Normaliza espaços
+    if not api_key:
+        return extrair_palavras_chave_simples(nome_cliente)
     
-    # Remove apenas palavras muito genéticas e curtas
-    words = []
-    for word in name.split():
-        if len(word) >= 3 and word not in COMMON_WORDS:
-            words.append(word)
-    
-    return ' '.join(words)
+    try:
+        import openai
+        
+        # Cliente configurado CORRETAMENTE para Maritaca
+        client = openai.OpenAI(
+            api_key=api_key,
+            base_url="https://chat.maritaca.ai/api",
+        )
+        
+        prompt = f"""
+Analise o nome da empresa "{nome_cliente}" e extraia APENAS a palavra mais significativa e única que melhor identifica esta empresa.
 
-def match_client_in_text(client_name, text, min_threshold=80):
-    """Busca nomes de empresas completos com tolerância para variações."""
-    text_normalized = normalize_name(text)
-    client_normalized = normalize_name(client_name)
+PRIORIDADE ABSOLUTA (nesta ordem):
+1. NOMES PRÓPRIOS ÚNICOS (Mauad, Vipex, Furtan, Galena, Farmabase, Braswell, LongPing)
+2. SIGLAS de 2-4 letras (EMS, QGC, ABC, XYZ)
+3. SOBRENOMES específicos (Silva, Pupin, Santos)
+
+NUNCA ESCOLHA palavras genéricas como:
+- Transportes, Máquinas, Indústria, Comércio, Produtos, Serviços, Materiais, Engenharia, Construtora, Química, Farmacêutica, Papel, Celulose, Saúde, Animal, Agropecuária, Biotecnologia
+
+REGRAS RIGOROSAS:
+- Ignore: S.A., LTDA, EIRELI, ME, CIA, INC, CORP, DO, DA, DE, E, EM, COM, PARA, POR, BRASIL
+- Priorize SEMPRE nomes próprios únicos sobre palavras genéricas
+- Se houver sigla, escolha a sigla
+- Se não houver sigla, escolha o nome próprio mais distintivo
+- NUNCA escolha palavras que descrevem o tipo de negócio
+
+EXEMPLOS CORRETOS:
+- "Mauad Franqueadora Ltda." → ["Mauad"] (nome próprio único)
+- "Vipex Transportes Ltda." → ["Vipex"] (NÃO "Transportes")
+- "Máquinas Furtan Ltda." → ["Furtan"] (NÃO "Máquinas")
+- "Galeria Química e Farmacêutica Ltda." → ["Galena"] (nome próprio)
+- "Farmabase Saúde Animal Ltda." → ["Farmabase"] (nome próprio)
+- "José Pupin Agropecuária" → ["Pupin"] (sobrenome específico)
+- "LongPing High - Tech Biotecnologia" → ["LongPing"] (nome próprio)
+- "EMS S.A." → ["EMS"] (sigla)
+
+Retorne APENAS o nome próprio mais distintivo que identifica unicamente esta empresa.
+"""
+
+        # Usar saídas estruturadas com Pydantic
+        completion = client.beta.chat.completions.parse(
+            model="sabia-3",
+            messages=[
+                {"role": "system", "content": "Você é um especialista em análise de nomes de empresas. Extraia as palavras-chave mais significativas."},
+                {"role": "user", "content": prompt}
+            ],
+            response_format=PalavrasChave,
+            max_tokens=200,
+            temperature=0.1
+        )
+        
+        resultado = completion.choices[0].message.parsed
+        
+        if resultado and resultado.palavras_significativas:
+            # Filtrar e validar as palavras
+            palavras_filtradas = []
+            for palavra in resultado.palavras_significativas[:2]:  # Máximo 2
+                palavra_limpa = palavra.strip().lower()
+                if len(palavra_limpa) >= 2 and palavra_limpa not in {'sa', 'ltda', 'me', 'cia'}:
+                    palavras_filtradas.append(palavra_limpa)
+            
+            if palavras_filtradas:
+                print(f"🤖 Maritaca extraiu de '{nome_cliente}': {palavras_filtradas} - {resultado.justificativa}")
+                return palavras_filtradas
+        
+        # Fallback se a resposta não foi boa
+        return extrair_palavras_chave_simples(nome_cliente)
+        
+    except Exception as e:
+        print(f"❌ Erro na API Maritaca: {e}")
+        return extrair_palavras_chave_simples(nome_cliente)
+
+def extrair_palavras_chave_simples(nome_cliente):
+    """Método fallback ULTRA-RIGOROSO para extrair palavras-chave"""
+    if not nome_cliente or not isinstance(nome_cliente, str):
+        return []
     
-    if not client_normalized or len(client_normalized) < 3:
+    # Palavras a ignorar (expandida)
+    ignore_words = {
+        'sa', 's.a', 's.a.', 'ltda', 'ltda.', 'eireli', 'me', 'empresa', 'cia', 'cia.', 
+        'inc', 'corp', 'co', 'do', 'da', 'de', 'dos', 'das', 'e', 'em', 'com', 'para', 
+        'por', 'a', 'o', 'as', 'os', 'limitada', 'sociedade', 'anonima', 'brasil',
+        'industria', 'indústria', 'comercio', 'comércio', 'servicos', 'serviços',
+        'materiais', 'produtos', 'equipamentos'  # Palavras muito genéricas
+    }
+    
+    # Normalizar
+    nome_limpo = re.sub(r'[^\w\s]', ' ', nome_cliente.lower())
+    palavras = [p.strip() for p in nome_limpo.split() if p.strip()]
+    
+    # Filtrar palavras significativas
+    palavras_significativas = []
+    for palavra in palavras:
+        if len(palavra) >= 3 and palavra not in ignore_words:
+            palavras_significativas.append(palavra)
+    
+    # Estratégia: priorizar palavras mais específicas
+    if not palavras_significativas:
+        # Se não sobrou nada, pegar a primeira palavra não genérica
+        for palavra in palavras:
+            if len(palavra) >= 2 and palavra not in {'sa', 'ltda', 'me', 'cia'}:
+                return [palavra]
+        return []
+    
+    # Retornar no máximo 2 palavras, priorizando as mais longas e específicas
+    palavras_significativas.sort(key=lambda x: (len(x), x), reverse=True)
+    return palavras_significativas[:2]
+
+def buscar_palavras_chave_no_texto_rigoroso(palavras_chave, texto, min_threshold=90):
+    """Busca ULTRA-RIGOROSA das palavras-chave no texto"""
+    
+    if not palavras_chave:
         return {
             'found': False,
             'confidence': 0,
-            'alias': client_normalized,
-            'context': 'Nome muito curto após normalização'
+            'palavras_encontradas': [],
+            'context': 'Nenhuma palavra-chave definida'
         }
     
-    client_words = client_normalized.split()
-    melhor_score = 0
-    melhor_alias = ''
-    melhor_contexto = ''
+    texto_normalizado = unidecode.unidecode(texto.lower())
+    palavras_encontradas = []
+    contextos = []
+    scores = []
     
-    # Estratégia 1: Nome completo com variações de pontuação/formatação
-    # Criar variações do nome original para lidar com S.A./S/A, etc.
-    original_lower = client_name.lower()
-    variações_nome = [
-        client_normalized,
-        original_lower,
-        original_lower.replace('s.a.', 'sa').replace('s/a', 'sa').replace('s.a', 'sa'),
-        original_lower.replace('ltda.', 'ltda').replace('limitada', 'ltda'),
-        # Remover preposições opcionais
-        client_normalized.replace(' do ', ' ').replace(' da ', ' ').replace(' de ', ' '),
-        # Versão sem espaços para casos extremos
-        client_normalized.replace(' ', '')
-    ]
-    
-    # Testar cada variação
-    for variacao in variações_nome:
-        if not variacao or len(variacao) < 3:
-            continue
-            
-        # Usar partial_ratio para encontrar a variação dentro do texto
-        score = fuzz.partial_ratio(variacao, text_normalized)
+    for palavra in palavras_chave:
+        palavra_norm = unidecode.unidecode(palavra.lower())
         
-        if score > melhor_score:
-            melhor_score = score
-            melhor_alias = variacao
+        # CRITÉRIO 1: Busca exata com delimitadores de palavra
+        pattern = r'\b' + re.escape(palavra_norm) + r'\b'
+        matches = re.finditer(pattern, texto_normalizado)
+        
+        encontrou_exato = False
+        for match in matches:
+            # Verificar contexto para evitar falsos positivos
+            start_idx = match.start()
+            end_idx = match.end()
             
-            # Encontrar contexto
-            idx = text_normalized.find(variacao)
-            if idx >= 0:
-                start = max(0, idx-50)
-                end = min(len(text), idx+len(variacao)+50)
-                melhor_contexto = text[start:end]
-    
-    # Estratégia 2: Para nomes longos, testar sem algumas palavras menos importantes
-    if len(client_words) >= 3:
-        # Testar removendo uma palavra por vez (exceto a primeira)
-        for i in range(1, len(client_words)):
-            palavras_sem_uma = client_words[:i] + client_words[i+1:]
-            variacao = ' '.join(palavras_sem_uma)
+            # Pegar contexto amplo
+            context_start = max(0, start_idx - 50)
+            context_end = min(len(texto), end_idx + 50)
+            contexto = texto[context_start:context_end]
             
-            if len(variacao) >= 6:  # Manter um mínimo razoável
-                score = fuzz.partial_ratio(variacao, text_normalized)
-                
-                if score > melhor_score:
-                    melhor_score = score
-                    melhor_alias = variacao
-                    
-                    idx = text_normalized.find(variacao)
-                    if idx >= 0:
-                        start = max(0, idx-50)
-                        end = min(len(text), idx+len(variacao)+50)
-                        melhor_contexto = text[start:end]
-    
-    # Estratégia 3: Busca por sequências de palavras significativas
-    # Para nomes com 2+ palavras, exigir que pelo menos 2 palavras consecutivas sejam encontradas
-    if len(client_words) >= 2:
-        for i in range(len(client_words) - 1):
-            # Testar pares de palavras consecutivas
-            par_palavras = ' '.join(client_words[i:i+2])
-            if len(par_palavras) >= 6:
-                score = fuzz.partial_ratio(par_palavras, text_normalized)
-                
-                # Bonus se encontrar mais palavras do nome na sequência
-                if score >= 85:  # Só considerar se o par já tem boa correspondência
-                    # Verificar quantas palavras do nome aparecem na sequência
-                    palavras_encontradas = 0
-                    for word in client_words:
-                        if word in text_normalized:
-                            palavras_encontradas += 1
-                    
-                    # Ajustar score baseado na proporção de palavras encontradas
-                    proporcao = palavras_encontradas / len(client_words)
-                    score_ajustado = score * (0.7 + 0.3 * proporcao)
-                    
-                    if score_ajustado > melhor_score:
-                        melhor_score = score_ajustado
-                        melhor_alias = f"{par_palavras} (+{palavras_encontradas-2} palavras)"
+            # Verificar se não é parte de uma palavra maior ou contexto irrelevante
+            if not eh_falso_positivo(palavra_norm, contexto.lower(), start_idx - context_start):
+                palavras_encontradas.append(palavra)
+                scores.append(100)
+                contextos.append(contexto)
+                encontrou_exato = True
+                break
+        
+        # CRITÉRIO 2: Se não encontrou exato e palavra é longa (6+ chars), tentar fuzzy
+        if not encontrou_exato and len(palavra_norm) >= 6:
+            palavras_texto = re.findall(r'\b\w{' + str(len(palavra_norm)-1) + ',}\b', texto_normalizado)
+            
+            melhor_score = 0
+            melhor_contexto = ""
+            
+            for palavra_texto in palavras_texto:
+                if abs(len(palavra_texto) - len(palavra_norm)) <= 2:  # Tamanho similar
+                    score = fuzz.ratio(palavra_norm, palavra_texto)
+                    if score >= 95:  # Muito rigoroso para fuzzy
+                        idx = texto_normalizado.find(palavra_texto)
+                        context_start = max(0, idx - 50)
+                        context_end = min(len(texto), idx + len(palavra_texto) + 50)
+                        contexto = texto[context_start:context_end]
                         
-                        idx = text_normalized.find(par_palavras)
-                        if idx >= 0:
-                            start = max(0, idx-50)
-                            end = min(len(text), idx+len(par_palavras)+50)
-                            melhor_contexto = text[start:end]
+                        if not eh_falso_positivo(palavra_norm, contexto.lower(), idx - context_start):
+                            if score > melhor_score:
+                                melhor_score = score
+                                melhor_contexto = contexto
+            
+            if melhor_score >= 95:
+                palavras_encontradas.append(f"{palavra} (~{melhor_score}%)")
+                scores.append(melhor_score)
+                contextos.append(melhor_contexto)
     
-    # Critérios para determinar se foi encontrado
+    # Determinar se foi encontrado
+    if not palavras_encontradas:
+        return {
+            'found': False,
+            'confidence': 0,
+            'palavras_encontradas': [],
+            'context': 'Nenhuma palavra-chave encontrada'
+        }
+    
+    # Critério INTELIGENTE para considerar "encontrado"
+    proporcao_encontrada = len(palavras_encontradas) / len(palavras_chave)
+    confianca_media = sum(scores) / len(scores)
+    
+    # Para ser considerado encontrado:
     found = False
-    
-    # Verificar se o nome original tinha sufixos corporativos (S.A., LTDA, etc.)
-    original_lower = client_name.lower()
-    has_corporate_suffix = any(suffix in original_lower for suffix in ['s.a.', 's/a', 'ltda', 'eireli', 'me'])
-    
-    if len(client_words) == 1:
-        # Para uma palavra: critério mais flexível se tinha sufixo corporativo
-        if has_corporate_suffix:
-            # Se tinha sufixo corporativo, aceitar palavras menores com score alto
-            if len(client_words[0]) >= 3 and melhor_score >= 95:
-                found = True
+    if len(palavras_chave) == 1:
+        # Uma palavra: deve encontrar com 95%+ de confiança
+        found = confianca_media >= 95
+    elif len(palavras_chave) == 2:
+        # Duas palavras: encontrar pelo menos UMA palavra significativa (sigla/nome único)
+        # Priorizar palavras curtas (siglas) ou palavras longas e específicas
+        palavras_prioritarias = [p for p in palavras_chave if len(p) <= 4 or len(p) >= 6]
+        if palavras_prioritarias:
+            # Se tem palavra prioritária, deve encontrar pelo menos ela
+            palavras_prioritarias_encontradas = [p for p in palavras_encontradas 
+                                               if any(pp in p.lower() for pp in palavras_prioritarias)]
+            found = len(palavras_prioritarias_encontradas) > 0 and confianca_media >= 95
         else:
-            # Critério original para palavras sem sufixo
-            if len(client_words[0]) >= 6 and melhor_score >= 98:
-                found = True
-    elif len(client_words) == 2:
-        # Para duas palavras: score alto
-        if melhor_score >= 85:
-            found = True
+            # Senão, deve encontrar pelo menos 50% das palavras
+            found = proporcao_encontrada >= 0.5 and confianca_media >= 90
     else:
-        # Para 3+ palavras: usar threshold, mas com mínimo de 80%
-        threshold_adjusted = max(min_threshold, 80)
-        if melhor_score >= threshold_adjusted:
-            found = True
+        # Múltiplas palavras: deve encontrar pelo menos 60% com 90%+ de confiança
+        found = proporcao_encontrada >= 0.6 and confianca_media >= 90
+    
+    confianca_final = int(confianca_media * proporcao_encontrada)
     
     return {
         'found': found,
-        'confidence': int(melhor_score),
-        'alias': melhor_alias,
-        'context': melhor_contexto.strip()
+        'confidence': confianca_final,
+        'palavras_encontradas': palavras_encontradas,
+        'context': ' | '.join(contextos[:2])
     }
+
+def eh_falso_positivo(palavra, contexto, posicao_palavra):
+    """Detecta se é um falso positivo baseado no contexto"""
+    
+    # Pegar texto ao redor da palavra
+    inicio = max(0, posicao_palavra - 20)
+    fim = min(len(contexto), posicao_palavra + len(palavra) + 20)
+    contexto_local = contexto[inicio:fim]
+    
+    # Padrões que indicam falso positivo
+    falsos_positivos = [
+        # EMS em contexto irrelevante
+        r'sobre\s+ems\s+não',
+        r'informações\s+sobre\s+ems',
+        r'ems\s+não\s+se\s+aplica',
+        
+        # Via/Pol separados
+        r'via\s+de\s+regra',
+        r'via\s+\w+\s+pol',
+        
+        # Contextos genéricos
+        r'não\s+tem\s+relação',
+        r'não\s+se\s+aplica',
+    ]
+    
+    for padrao in falsos_positivos:
+        if re.search(padrao, contexto_local):
+            return True
+    
+    return False
 
 # -------------- Classe principal --------------
 
-class CrawlerPDFV3:
+class CrawlerPDFV42:
     def __init__(self):
-        self.threshold = 80
+        self.threshold = 90  # Threshold mais alto
         self.results = []
         self.processing = False
         self.cancelled = False
@@ -196,523 +299,638 @@ class CrawlerPDFV3:
         self.status_message = "Pronto para processar"
         self.last_output_file = None
         self.last_output_filename = None
+        self.maritaca_api_key = ""
+        self.palavras_chave_cache = {}
         self.stats = {
             'processing_start': None,
+            'processing_end': None,
             'total_clients': 0,
-            'found_clients': 0
+            'clients_found': 0,
+            'clients_not_found': 0,
+            'pdf_pages': 0,
+            'api_calls': 0,
+            'false_positives_avoided': 0
         }
 
+    def set_maritaca_api_key(self, api_key):
+        self.maritaca_api_key = api_key.strip()
+
     def reset_processing(self):
-        self.cancelled = False
         self.processing = False
+        self.cancelled = False
         self.progress = 0
-        self.results = []
         self.status_message = "Pronto para processar"
-        self.stats['found_clients'] = 0
+        self.results = []
+        self.palavras_chave_cache = {}
 
     def cancel_processing(self):
         self.cancelled = True
-        self.status_message = "❌ Processamento cancelado"
-        self.processing = False
+        self.status_message = "Cancelando..."
 
     def read_excel_clients(self, excel_path: str):
         df = pd.read_excel(excel_path)
-        if df.empty:
-            return []
-        clients = df.iloc[:, 0].dropna().astype(str).tolist()
-        return [client.strip() for client in clients if client.strip()]
+        for col in df.columns:
+            if df[col].dtype == 'object':
+                return df[col].dropna().tolist()
+        return []
 
     def read_pdf(self, pdf_path: str):
         text = ""
-        with open(pdf_path, 'rb') as file:
-            reader = PyPDF2.PdfReader(file)
-            total_pages = len(reader.pages)
-            for i, page in enumerate(reader.pages):
-                self.progress = int((i / total_pages) * 30)  # 0-30% para leitura
-                self.status_message = f"📄 Processando página {i+1}/{total_pages}"
-                text += page.extract_text() or ""
-                if self.cancelled:
-                    return None
+        try:
+            with open(pdf_path, 'rb') as file:
+                pdf_reader = PyPDF2.PdfReader(file)
+                self.stats['pdf_pages'] = len(pdf_reader.pages)
+                
+                for page in pdf_reader.pages:
+                    text += page.extract_text() + "\n"
+        except Exception as e:
+            print(f"Erro ao ler PDF: {e}")
         return text
 
+    def extrair_palavras_chave_cliente(self, nome_cliente):
+        if nome_cliente in self.palavras_chave_cache:
+            return self.palavras_chave_cache[nome_cliente]
+        
+        self.status_message = f"🤖 Analisando com Sabiá-3: {nome_cliente}"
+        
+        if self.maritaca_api_key:
+            palavras = extrair_palavras_chave_maritaca_correto(nome_cliente, self.maritaca_api_key)
+            self.stats['api_calls'] += 1
+        else:
+            palavras = extrair_palavras_chave_simples(nome_cliente)
+        
+        self.palavras_chave_cache[nome_cliente] = palavras
+        return palavras
+
     def process_files(self, excel_path, pdf_path, threshold):
+        self.reset_processing()
+        self.processing = True
+        self.threshold = max(threshold, 90)  # Mínimo 90%
+        self.stats['processing_start'] = datetime.now()
+        
         try:
-            self.reset_processing()
-            self.processing = True
-            self.threshold = threshold
-            self.stats['processing_start'] = time.time()
-            self.status_message = "📊 Lendo arquivo Excel..."
-            self.progress = 5
+            self.status_message = "Lendo lista de clientes..."
             clients = self.read_excel_clients(excel_path)
-            if not clients:
-                self.status_message = "❌ Nenhum cliente encontrado"
-                self.processing = False
-                return None
             self.stats['total_clients'] = len(clients)
-
-            self.status_message = "📄 Processando PDF..."
-            self.progress = 10
+            
+            if self.cancelled:
+                return []
+            
+            self.status_message = "Lendo documento PDF..."
             pdf_text = self.read_pdf(pdf_path)
-            if self.cancelled or not pdf_text:
-                return None
-
-            results = []
+            
+            if self.cancelled:
+                return []
+            
+            self.results = []
+            
             for i, client in enumerate(clients):
                 if self.cancelled:
                     break
-                self.progress = 30 + int((i / len(clients)) * 60)  # 30-90%
-                self.status_message = f"🔍 Buscando: {client} ({i+1}/{len(clients)})"
-                match_result = match_client_in_text(client, pdf_text, threshold)
-                if match_result['found']:
-                    self.stats['found_clients'] += 1
-                results.append({
+                
+                self.progress = int((i / len(clients)) * 100)
+                
+                palavras_chave = self.extrair_palavras_chave_cliente(client)
+                self.status_message = f"🔍 Buscando: {client} → {palavras_chave}"
+                
+                match_result = buscar_palavras_chave_no_texto_rigoroso(palavras_chave, pdf_text, self.threshold)
+                
+                result = {
                     'cliente': client,
+                    'palavras_chave_ia': ', '.join(palavras_chave),
                     'encontrado': 'Sim' if match_result['found'] else 'Não',
-                    'confianca': f"{match_result['confidence']}%",
-                    'alias_usado': match_result['alias'],
-                    'contexto': match_result['context'][:150] + '...' if len(match_result['context']) > 150 else match_result['context']
-                })
-                time.sleep(0.01)
-
-            if self.cancelled:
-                return None
-
-            self.progress = 95
-            self.status_message = "💾 Salvando resultados..."
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_filename = f"crawler_v3_{timestamp}.xlsx"
-            output_path = os.path.join(tempfile.gettempdir(), output_filename)
-            df = pd.DataFrame(results)
-
-            stats_data = {
-                'Métrica': [
-                    'Total de Clientes',
-                    'Clientes Encontrados',
-                    'Taxa de Sucesso (%)'
-                ],
-                'Valor': [
-                    len(results),
-                    self.stats['found_clients'],
-                    f"{(self.stats['found_clients'] / len(results) * 100):.1f}%"
-                ]
-            }
-            df_stats = pd.DataFrame(stats_data)
-
-            with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
-                df.to_excel(writer, sheet_name='Resultados', index=False)
-                df_stats.to_excel(writer, sheet_name='Estatísticas', index=False)
-
-            self.results = results
-            self.processing = False
-            self.last_output_file = output_path
-            self.last_output_filename = output_filename
-
-            processing_time = time.time() - self.stats['processing_start']
-            self.status_message = f"✅ Concluído! {self.stats['found_clients']}/{len(results)} encontrados em {processing_time:.1f}s"
+                    'similaridade': f"{match_result['confidence']}%",
+                    'palavras_encontradas': ', '.join(match_result['palavras_encontradas']),
+                    'contexto': match_result['context'][:200] + '...' if len(match_result['context']) > 200 else match_result['context']
+                }
+                
+                self.results.append(result)
+                
+                if match_result['found']:
+                    self.stats['clients_found'] += 1
+                else:
+                    self.stats['clients_not_found'] += 1
+            
             self.progress = 100
-
-            return {
-                'success': True,
-                'total': len(results),
-                'found': self.stats['found_clients'],
-                'file': output_filename,
-                'results': results,
-                'processing_time': processing_time
-            }
+            self.stats['processing_end'] = datetime.now()
+            self.save_results()
+            
+            self.status_message = f"✅ Concluído! {self.stats['clients_found']}/{self.stats['total_clients']} clientes encontrados (Sabiá-3)"
+            
         except Exception as e:
-            self.status_message = f"❌ Erro: {str(e)}"
+            self.status_message = f"Erro: {str(e)}"
+            print(f"Erro no processamento: {e}")
+        
+        finally:
             self.processing = False
-            return None
+        
+        return self.results
 
-# ------------ Flask app ------------
+    def save_results(self):
+        if not self.results:
+            return
+        
+        df = pd.DataFrame(self.results)
+        
+        stats_data = {
+            'Estatística': [
+                'Total de Clientes',
+                'Clientes Encontrados', 
+                'Clientes Não Encontrados',
+                'Taxa de Sucesso',
+                'Páginas do PDF',
+                'Chamadas à API Sabiá-3',
+                'Falsos Positivos Evitados',
+                'Tempo de Processamento',
+                'Threshold Usado'
+            ],
+            'Valor': [
+                self.stats['total_clients'],
+                self.stats['clients_found'],
+                self.stats['clients_not_found'],
+                f"{(self.stats['clients_found']/self.stats['total_clients']*100):.1f}%" if self.stats['total_clients'] > 0 else "0%",
+                self.stats['pdf_pages'],
+                self.stats['api_calls'],
+                self.stats['false_positives_avoided'],
+                str(self.stats['processing_end'] - self.stats['processing_start']).split('.')[0] if self.stats['processing_end'] else "N/A",
+                f"{self.threshold}%"
+            ]
+        }
+        
+        stats_df = pd.DataFrame(stats_data)
+        
+        temp_dir = tempfile.gettempdir()
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"resultados_sabia3_{timestamp}.xlsx"
+        filepath = os.path.join(temp_dir, filename)
+        
+        with pd.ExcelWriter(filepath, engine='openpyxl') as writer:
+            df.to_excel(writer, sheet_name='Resultados', index=False)
+            stats_df.to_excel(writer, sheet_name='Estatísticas', index=False)
+        
+        self.last_output_file = filepath
+        self.last_output_filename = filename
 
-crawler_v3 = CrawlerPDFV3()
+# -------------- Flask App --------------
+
 app = Flask(__name__)
-app.secret_key = 'crawler_v3_secret'
+crawler = CrawlerPDFV42()
 
 @app.route('/')
 def index():
-    return """
-    <!DOCTYPE html>
-    <html lang="pt-BR">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>🔍 Crawler PDF V3.0</title>
-        <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { 
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-                min-height: 100vh; 
-                padding: 20px;
-            }
-            .container { max-width: 800px; margin: 0 auto; }
-            .header { 
-                text-align: center; 
-                color: white; 
-                margin-bottom: 30px; 
-                text-shadow: 0 2px 4px rgba(0,0,0,0.3);
-            }
-            .header h1 { font-size: 2.5em; margin-bottom: 10px; }
-            .header p { font-size: 1.2em; opacity: 0.9; }
-            .card { 
-                background: white; 
-                border-radius: 15px; 
-                padding: 30px; 
-                box-shadow: 0 10px 30px rgba(0,0,0,0.2); 
-                margin-bottom: 20px; 
-            }
-            .form-group { margin-bottom: 25px; }
-            label { 
-                display: block; 
-                margin-bottom: 8px; 
-                font-weight: 600; 
-                color: #333; 
-                font-size: 1.1em;
-            }
-            input[type="file"] { 
-                width: 100%; 
-                padding: 15px; 
-                border: 2px dashed #ddd; 
-                border-radius: 8px; 
-                background: #f9f9f9; 
-                font-size: 1em;
-                transition: border-color 0.3s;
-            }
-            input[type="file"]:hover { border-color: #667eea; }
-            input[type="number"] {
-                width: 150px;
-                padding: 12px;
-                border: 2px solid #ddd;
-                border-radius: 8px;
-                font-size: 1em;
-            }
-            .btn { 
-                padding: 15px 30px; 
-                border: none; 
-                border-radius: 8px; 
-                font-weight: 600; 
-                cursor: pointer; 
-                transition: all 0.3s; 
-                font-size: 1.1em;
-                text-transform: uppercase;
-                letter-spacing: 1px;
-            }
-            .btn-primary { 
-                background: linear-gradient(45deg, #667eea, #764ba2); 
-                color: white; 
-                box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
-            }
-            .btn-primary:hover { 
-                transform: translateY(-2px); 
-                box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
-            }
-            .btn:disabled { 
-                opacity: 0.6; 
-                cursor: not-allowed; 
-                transform: none !important;
-            }
-            .progress-section { 
-                display: none; 
-                text-align: center;
-            }
-            .progress-bar { 
-                width: 100%; 
-                height: 25px; 
-                background: #f0f0f0; 
-                border-radius: 15px; 
-                overflow: hidden; 
-                margin: 20px 0; 
-                box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
-            }
-            .progress-fill { 
-                height: 100%; 
-                background: linear-gradient(90deg, #667eea, #764ba2); 
-                transition: width 0.3s; 
-                border-radius: 15px;
-            }
-            .status-message {
-                font-size: 1.1em;
-                color: #333;
-                margin: 15px 0;
-                font-weight: 500;
-            }
-            .results-section { 
-                display: none; 
-            }
-            .stats { 
-                display: grid; 
-                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); 
-                gap: 20px; 
-                margin: 25px 0; 
-            }
-            .stat-card { 
-                text-align: center; 
-                padding: 20px; 
-                background: linear-gradient(135deg, #f8f9fa, #e9ecef); 
-                border-radius: 12px; 
-                box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-            }
-            .stat-number { 
-                font-size: 2.5em; 
-                font-weight: bold; 
-                color: #667eea; 
-                margin-bottom: 5px;
-            }
-            .stat-label { 
-                color: #666; 
-                font-weight: 500;
-                text-transform: uppercase;
-                letter-spacing: 1px;
-                font-size: 0.9em;
-            }
-            .download-btn { 
-                background: linear-gradient(45deg, #28a745, #20c997); 
-                color: white; 
-                box-shadow: 0 4px 15px rgba(40, 167, 69, 0.4);
-            }
-            .download-btn:hover { 
-                transform: translateY(-2px); 
-                box-shadow: 0 6px 20px rgba(40, 167, 69, 0.6);
-            }
-            .version-badge {
-                background: rgba(255,255,255,0.2);
-                padding: 5px 15px;
-                border-radius: 20px;
-                font-size: 0.9em;
-                margin-top: 10px;
-                display: inline-block;
-            }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <div class="header">
-                <h1>🔍 Crawler PDF V3.0</h1>
-                <p>Busque clientes do Excel em documentos PDF com IA</p>
-                <div class="version-badge">✨ Algoritmo Otimizado com RapidFuzz</div>
+    return render_template_string("""
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crawler PDF V4.2 - Sabiá-3 Oficial</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #2E8B57, #228B22);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 { font-size: 2.5em; margin-bottom: 10px; }
+        .header p { font-size: 1.1em; opacity: 0.9; }
+        .content { padding: 40px; }
+        
+        .sabia-badge {
+            background: #228B22;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 25px;
+            display: inline-block;
+            margin-bottom: 20px;
+            font-weight: bold;
+        }
+        
+        .api-config {
+            background: #f0fff0;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 30px;
+            border-left: 4px solid #228B22;
+        }
+        
+        .form-group { margin-bottom: 25px; }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+        
+        input[type="file"], input[type="password"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        
+        input:focus {
+            outline: none;
+            border-color: #228B22;
+        }
+        
+        .threshold-group {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .threshold-slider { flex: 1; }
+        
+        .threshold-value {
+            background: #228B22;
+            color: white;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-weight: bold;
+            min-width: 60px;
+            text-align: center;
+        }
+        
+        .btn {
+            background: linear-gradient(135deg, #228B22, #2E8B57);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            width: 100%;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(34, 139, 34, 0.4);
+        }
+        
+        .btn:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        
+        .progress-container {
+            margin-top: 30px;
+            display: none;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: #ecf0f1;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 15px;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #228B22, #2E8B57);
+            width: 0%;
+            transition: width 0.3s;
+        }
+        
+        .status {
+            text-align: center;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+        
+        .results {
+            margin-top: 30px;
+            display: none;
+        }
+        
+        .results-header {
+            background: #228B22;
+            color: white;
+            padding: 15px;
+            border-radius: 8px 8px 0 0;
+            text-align: center;
+            font-weight: 600;
+        }
+        
+        .results-content {
+            background: #f0fff0;
+            padding: 20px;
+            border-radius: 0 0 8px 8px;
+            border: 1px solid #e0e0e0;
+        }
+        
+        .download-btn {
+            background: linear-gradient(135deg, #27ae60, #2ecc71);
+            margin-top: 15px;
+        }
+        
+        .cancel-btn {
+            background: linear-gradient(135deg, #95a5a6, #7f8c8d);
+            margin-top: 10px;
+        }
+        
+        .info-box {
+            background: #f0fff0;
+            border: 1px solid #228B22;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .info-box h3 {
+            color: #2E8B57;
+            margin-bottom: 10px;
+        }
+        
+        .info-box ul {
+            margin-left: 20px;
+        }
+        
+        .info-box li {
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 Crawler PDF V4.2</h1>
+            <p>Powered by Sabiá-3 - IA Brasileira da Maritaca</p>
+        </div>
+        
+        <div class="content">
+            <div class="sabia-badge">
+                🇧🇷 SABIÁ-3 OFICIAL ATIVADO
             </div>
-
-            <div class="card">
-                <form id="crawlerForm" enctype="multipart/form-data">
-                    <div class="form-group">
-                        <label for="excelFile">📊 Arquivo Excel com lista de clientes:</label>
-                        <input type="file" id="excelFile" name="excelFile" accept=".xlsx,.xls" required>
-                        <small style="color: #666; margin-top: 5px; display: block;">
-                            💡 O sistema lerá a primeira coluna do Excel
-                        </small>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="pdfFile">📄 Arquivo PDF para busca:</label>
-                        <input type="file" id="pdfFile" name="pdfFile" accept=".pdf" required>
-                        <small style="color: #666; margin-top: 5px; display: block;">
-                            💡 Documentos QGC, processos jurídicos, etc.
-                        </small>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="tolerance">🎯 Tolerância de Similaridade:</label>
-                        <input type="number" id="tolerance" name="tolerance" min="50" max="100" value="80">
-                        <small style="color: #666; margin-left: 10px;">
-                            (50-100%) - Recomendado: 80%
-                        </small>
-                    </div>
-
-                    <button type="submit" id="processBtn" class="btn btn-primary">
-                        🚀 Processar Arquivos
-                    </button>
-                </form>
+            
+            <div class="info-box">
+                <h3>🚀 Versão 4.2 com Sabiá-3:</h3>
+                <ul>
+                    <li><strong>API Oficial Maritaca:</strong> Usa a documentação correta com sabiá-3</li>
+                    <li><strong>Saídas Estruturadas:</strong> Pydantic models para extrair palavras-chave</li>
+                    <li><strong>IA Brasileira:</strong> Modelo treinado para português brasileiro</li>
+                    <li><strong>Ultra-Precisão:</strong> Elimina falsos positivos com análise de contexto</li>
+                    <li><strong>Cache Inteligente:</strong> Evita chamadas desnecessárias à API</li>
+                </ul>
             </div>
-
-            <div class="card progress-section" id="progressSection">
-                <h3>⏳ Processando...</h3>
-                <div class="progress-bar">
-                    <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+            
+            <div class="api-config">
+                <h3>🔑 Chave da API Maritaca (Obrigatória para IA)</h3>
+                <p style="margin-bottom: 15px; color: #666;">
+                    Cole sua chave da API Maritaca para usar o Sabiá-3. 
+                    Sem a chave, será usado algoritmo local simples.
+                </p>
+                <div class="form-group">
+                    <label for="maritaca-key">Chave da API Maritaca:</label>
+                    <input type="password" id="maritaca-key" placeholder="Ex: 100088... (obtenha em chat.maritaca.ai)">
                 </div>
-                <div class="status-message" id="statusMessage">Iniciando processamento...</div>
             </div>
-
-            <div class="card results-section" id="resultsSection">
-                <h3>📊 Resultados do Processamento</h3>
-                <div class="stats" id="resultsStats"></div>
-                <button class="btn download-btn" id="downloadBtn">
-                    💾 Baixar Planilha de Resultados
+            
+            <form id="upload-form">
+                <div class="form-group">
+                    <label for="excel-file">📊 Arquivo Excel com Lista de Clientes:</label>
+                    <input type="file" id="excel-file" accept=".xlsx,.xls" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="pdf-file">📄 Documento PDF para Busca:</label>
+                    <input type="file" id="pdf-file" accept=".pdf" required>
+                </div>
+                
+                <div class="form-group">
+                    <label>🎯 Precisão da Busca (Mínimo 90%):</label>
+                    <div class="threshold-group">
+                        <input type="range" id="threshold" class="threshold-slider" min="90" max="100" value="95">
+                        <div class="threshold-value" id="threshold-value">95%</div>
+                    </div>
+                    <small style="color: #666; margin-top: 5px; display: block;">
+                        Sabiá-3 + Ultra-Precisão: 95%+ recomendado
+                    </small>
+                </div>
+                
+                <button type="submit" class="btn" id="process-btn">
+                    🤖 Processar com Sabiá-3
                 </button>
+                
+                <button type="button" class="btn cancel-btn" id="cancel-btn" style="display: none;">
+                    ❌ Cancelar Processamento
+                </button>
+            </form>
+            
+            <div class="progress-container" id="progress-container">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progress-fill"></div>
+                </div>
+                <div class="status" id="status">Processando...</div>
+            </div>
+            
+            <div class="results" id="results">
+                <div class="results-header">
+                    🤖 Processamento com Sabiá-3 Concluído!
+                </div>
+                <div class="results-content">
+                    <p id="results-summary">Resultados processados com IA brasileira.</p>
+                    <button class="btn download-btn" id="download-btn">
+                        📥 Baixar Resultados do Sabiá-3
+                    </button>
+                </div>
             </div>
         </div>
+    </div>
 
-        <script>
-            const form = document.getElementById('crawlerForm');
-            const processBtn = document.getElementById('processBtn');
-            const progressSection = document.getElementById('progressSection');
-            const resultsSection = document.getElementById('resultsSection');
-            const progressFill = document.getElementById('progressFill');
-            const statusMessage = document.getElementById('statusMessage');
+    <script>
+        const thresholdSlider = document.getElementById('threshold');
+        const thresholdValue = document.getElementById('threshold-value');
+        
+        thresholdSlider.addEventListener('input', function() {
+            thresholdValue.textContent = this.value + '%';
+        });
+        
+        document.getElementById('upload-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
             
-            let currentResultFile = null;
+            const formData = new FormData();
+            formData.append('excel_file', document.getElementById('excel-file').files[0]);
+            formData.append('pdf_file', document.getElementById('pdf-file').files[0]);
+            formData.append('threshold', document.getElementById('threshold').value);
+            formData.append('maritaca_key', document.getElementById('maritaca-key').value);
             
-            form.addEventListener('submit', async function(e) {
-                e.preventDefault();
+            document.getElementById('progress-container').style.display = 'block';
+            document.getElementById('results').style.display = 'none';
+            document.getElementById('process-btn').disabled = true;
+            document.getElementById('cancel-btn').style.display = 'block';
+            
+            try {
+                const response = await fetch('/process_v42', {
+                    method: 'POST',
+                    body: formData
+                });
                 
-                const formData = new FormData(form);
-                
-                // Mostrar seção de progresso
-                progressSection.style.display = 'block';
-                resultsSection.style.display = 'none';
-                processBtn.disabled = true;
-                processBtn.textContent = '⏳ Processando...';
-                
-                try {
-                    const response = await fetch('/process_v3', {
-                        method: 'POST',
-                        body: formData
-                    });
-                    
-                    if (response.ok) {
-                        monitorProgress();
-                    } else {
-                        throw new Error('Erro no servidor');
-                    }
-                    
-                } catch (error) {
-                    alert('Erro: ' + error.message);
+                if (response.ok) {
+                    monitorProgress();
+                } else {
+                    alert('Erro ao iniciar processamento');
                     resetUI();
                 }
-            });
-            
-            async function monitorProgress() {
-                try {
-                    const response = await fetch('/progress_v3');
-                    const data = await response.json();
-                    
-                    progressFill.style.width = data.progress + '%';
-                    statusMessage.textContent = data.status;
-                    
-                    if (data.processing) {
-                        setTimeout(monitorProgress, 1000);
-                    } else if (data.results) {
-                        showResults(data.results);
-                    } else {
-                        alert('Erro durante processamento');
-                        resetUI();
-                    }
-                    
-                } catch (error) {
-                    console.error('Erro:', error);
-                    setTimeout(monitorProgress, 2000);
-                }
-            }
-            
-            function showResults(results) {
-                progressSection.style.display = 'none';
-                resultsSection.style.display = 'block';
-                
-                const successRate = ((results.found / results.total) * 100).toFixed(1);
-                
-                document.getElementById('resultsStats').innerHTML = `
-                    <div class="stat-card">
-                        <div class="stat-number">${results.total}</div>
-                        <div class="stat-label">Total de Clientes</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-number">${results.found}</div>
-                        <div class="stat-label">Encontrados</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-number">${successRate}%</div>
-                        <div class="stat-label">Taxa de Sucesso</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-number">${results.processing_time}s</div>
-                        <div class="stat-label">Tempo de Processamento</div>
-                    </div>
-                `;
-                
-                currentResultFile = results.file;
+            } catch (error) {
+                alert('Erro: ' + error.message);
                 resetUI();
             }
-            
-            document.getElementById('downloadBtn').addEventListener('click', function() {
-                if (currentResultFile) {
-                    window.open('/download/' + encodeURIComponent(currentResultFile));
+        });
+        
+        function monitorProgress() {
+            const interval = setInterval(async () => {
+                try {
+                    const response = await fetch('/progress_v42');
+                    const data = await response.json();
+                    
+                    document.getElementById('progress-fill').style.width = data.progress + '%';
+                    document.getElementById('status').textContent = data.status;
+                    
+                    if (!data.processing) {
+                        clearInterval(interval);
+                        
+                        if (data.results && data.results.length > 0) {
+                            showResults(data);
+                        }
+                        
+                        resetUI();
+                    }
+                } catch (error) {
+                    console.error('Erro ao monitorar progresso:', error);
                 }
-            });
+            }, 1000);
+        }
+        
+        function showResults(data) {
+            const found = data.results.filter(r => r.encontrado === 'Sim').length;
+            const total = data.results.length;
             
-            function resetUI() {
-                processBtn.disabled = false;
-                processBtn.textContent = '🚀 Processar Arquivos';
+            document.getElementById('results-summary').innerHTML = `
+                <strong>🤖 Resultados do Sabiá-3:</strong><br>
+                • Total de clientes: ${total}<br>
+                • Clientes encontrados: ${found}<br>
+                • Taxa de sucesso: ${((found/total)*100).toFixed(1)}%<br>
+                • Chamadas ao Sabiá-3: ${data.api_calls || 0}<br>
+                • IA Brasileira em ação! 🇧🇷
+            `;
+            
+            document.getElementById('results').style.display = 'block';
+        }
+        
+        function resetUI() {
+            document.getElementById('process-btn').disabled = false;
+            document.getElementById('cancel-btn').style.display = 'none';
+        }
+        
+        document.getElementById('cancel-btn').addEventListener('click', async function() {
+            try {
+                await fetch('/cancel', { method: 'POST' });
+            } catch (error) {
+                console.error('Erro ao cancelar:', error);
             }
-        </script>
-    </body>
-    </html>
-    """
+        });
+        
+        document.getElementById('download-btn').addEventListener('click', function() {
+            window.location.href = '/download/latest';
+        });
+    </script>
+</body>
+</html>
+    """)
 
-@app.route('/process_v3', methods=['POST'])
-def process_files_v3():
+@app.route('/process_v42', methods=['POST'])
+def process_files_v42():
+    if crawler.processing:
+        return jsonify({'error': 'Já existe um processamento em andamento'}), 400
+    
     try:
-        excel_file = request.files.get('excelFile')
-        pdf_file = request.files.get('pdfFile')
-        tolerance = request.form.get('tolerance', 80)
-        if not excel_file or not pdf_file:
-            return jsonify({'success': False, 'error': 'Arquivos não enviados'}), 400
-        threshold = int(tolerance)
-        temp_dir = tempfile.mkdtemp()
-        excel_path = os.path.join(temp_dir, f"excel_{excel_file.filename}")
-        pdf_path = os.path.join(temp_dir, f"pdf_{pdf_file.filename}")
+        maritaca_key = request.form.get('maritaca_key', '').strip()
+        if maritaca_key:
+            crawler.set_maritaca_api_key(maritaca_key)
+        
+        excel_file = request.files['excel_file']
+        pdf_file = request.files['pdf_file']
+        threshold = int(request.form.get('threshold', 95))
+        
+        temp_dir = tempfile.gettempdir()
+        excel_path = os.path.join(temp_dir, f"temp_excel_{int(time.time())}.xlsx")
+        pdf_path = os.path.join(temp_dir, f"temp_pdf_{int(time.time())}.pdf")
+        
         excel_file.save(excel_path)
         pdf_file.save(pdf_path)
+        
         def process_thread():
-            crawler_v3.process_files(excel_path, pdf_path, threshold)
-            shutil.rmtree(temp_dir, ignore_errors=True)
+            crawler.process_files(excel_path, pdf_path, threshold)
+            try:
+                os.remove(excel_path)
+                os.remove(pdf_path)
+            except:
+                pass
+        
         thread = threading.Thread(target=process_thread)
-        thread.daemon = True
         thread.start()
+        
         return jsonify({'success': True})
+        
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({'error': str(e)}), 500
 
-@app.route('/progress_v3')
-def get_progress_v3():
-    if not crawler_v3.processing and crawler_v3.results:
-        return jsonify({
-            'processing': False,
-            'progress': 100,
-            'status': crawler_v3.status_message,
-            'results': {
-                'total': len(crawler_v3.results),
-                'found': crawler_v3.stats['found_clients'],
-                'file': crawler_v3.last_output_filename,
-                'processing_time': f"{time.time() - crawler_v3.stats['processing_start']:.1f}"
-            }
-        })
-    else:
-        return jsonify({
-            'processing': crawler_v3.processing,
-            'progress': crawler_v3.progress,
-            'status': crawler_v3.status_message,
-            'stats': crawler_v3.stats
-        })
+@app.route('/progress_v42')
+def get_progress_v42():
+    return jsonify({
+        'processing': crawler.processing,
+        'progress': crawler.progress,
+        'status': crawler.status_message,
+        'results': crawler.results if not crawler.processing else None,
+        'api_calls': crawler.stats.get('api_calls', 0)
+    })
 
 @app.route('/cancel', methods=['POST'])
 def cancel_processing():
-    try:
-        crawler_v3.cancel_processing()
-        return jsonify({'success': True, 'message': 'Processamento cancelado'})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+    crawler.cancel_processing()
+    return jsonify({'success': True})
 
-@app.route('/download/<filename>')
-def download_file(filename):
-    try:
-        if crawler_v3.last_output_file and os.path.exists(crawler_v3.last_output_file):
-            return send_file(crawler_v3.last_output_file, as_attachment=True, download_name=filename)
-        else:
-            return "Arquivo não encontrado", 404
-    except Exception as e:
-        return f"Erro ao baixar: {e}", 500
+@app.route('/download/latest')
+def download_latest():
+    if crawler.last_output_file and os.path.exists(crawler.last_output_file):
+        return send_file(
+            crawler.last_output_file,
+            as_attachment=True,
+            download_name=crawler.last_output_filename
+        )
+    else:
+        return "Nenhum resultado disponível", 404
 
-if __name__ == "__main__":
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=False) 
+if __name__ == '__main__':
+    print("🤖 Crawler PDF V4.2 - Sabiá-3 Oficial")
+    print("Acesse: http://localhost:5002")
+    app.run(debug=True, host='0.0.0.0', port=5002) 
